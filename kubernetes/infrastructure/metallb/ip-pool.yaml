@@ -9,14 +9,3 @@ spec:
     - 192.168.99.120-192.168.99.140  # 21 IP addresses for LoadBalancer services
   autoAssign: true
   avoidBuggyIPs: false
----
-apiVersion: metallb.io/v1beta1
-kind: L2Advertisement
-metadata:
-  name: default-advertisement
-  namespace: metallb-system
-spec:
-  ipAddressPools:
-    - default-pool
-  interfaces:
-    - eth0  # Physical interface on Raspberry Pi
