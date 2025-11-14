@@ -1,0 +1,6 @@
+customization:
+  systemExtensions:
+    officialExtensions: []
+overlay:
+  image: ghcr.io/siderolabs/sbc-raspberrypi
+  name: rpi_generic

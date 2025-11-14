@@ -1,0 +1,20 @@
+machine:
+  network:
+    hostname: cp02
+    interfaces:
+      - deviceSelector:
+          physical: true  # Matches eth0 on RPi
+        addresses:
+          - 192.168.99.102/24
+        routes:
+          - network: 0.0.0.0/0
+            gateway: 192.168.99.1
+        vip:
+          ip: 192.168.99.100  # Shared VIP for HA
+  install:
+    disk: /dev/mmcblk0  # SD card on Raspberry Pi
+    image: factory.talos.dev/installer/${SCHEMATIC_ID}:v1.11.5
+cluster:
+  allowSchedulingOnControlPlanes: true
+  controlPlane:
+    endpoint: https://192.168.99.100:6443  # Use VIP endpoint

@@ -1,0 +1,107 @@
+# Talos Secrets - NEVER COMMIT THESE
+secrets.yaml
+talosconfig
+*.key
+*.crt
+*.pem
+
+# Kubernetes Configs with Credentials
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+
+# Encrypted files (keep .enc.yaml files, ignore decrypted versions)
+secrets-dec.yaml
+*-dec.yaml
+
+# SOPS files
+.sops.yaml.bak
+
+# Talos temporary files
+*.bak
+*.tmp
+
+# Downloaded Images
+*.iso
+*.raw
+*.raw.xz
+*.img
+*.img.xz
+
+# Schematic files (optional - you may want to commit these)
+# schematic.yaml
+
+# Flux SOPS keys
+*.asc
+*.gpg
+!.sops.keys/.gitkeep
+
+# Age keys
+age.agekey
+*.age
+
+# Terraform / OpenTofu
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+
+# Ansible
+*.retry
+.vault_pass
+
+# Scripts output
+logs/
+*.log
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS files
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Temporary directories
+tmp/
+temp/
+.tmp/
+
+# Backup files
+backup/
+*.backup
+
+# Personal notes (optional)
+notes.md
+TODO.md
+SCRATCH.md
+
+# Local environment files
+.env
+.env.local
+*.local
+
+# Compiled files
+*.pyc
+__pycache__/
+node_modules/
+
+# Test outputs
+test-results/
+coverage/
+
+# Helm charts cache
+charts/*.tgz
+
+# Keep example/template files
+!*.example
+!*.template
+!*.sample
+
+talos-images/
