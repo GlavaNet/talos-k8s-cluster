@@ -72,7 +72,7 @@ spec:
     
     # Persistence for certificates
     persistence:
-      enabled: true
+      enabled: false
       name: data
       accessMode: ReadWriteOnce
       size: 128Mi
