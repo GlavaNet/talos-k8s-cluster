@@ -1,0 +1,101 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: traefik
+  namespace: traefik
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: traefik
+      version: "31.x"
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+        namespace: traefik
+      interval: 12h
+  values:
+    # Deployment configuration
+    deployment:
+      kind: DaemonSet
+      replicas: 3  # Ignored for DaemonSet
+    
+    # Service configuration - uses MetalLB
+    service:
+      enabled: true
+      type: LoadBalancer
+      annotations:
+        metallb.universe.tf/loadBalancerIPs: 192.168.99.120  # First IP from MetalLB pool
+      spec:
+        externalTrafficPolicy: Local  # Better for source IP preservation
+    
+    # Ports configuration
+    ports:
+      web:
+        port: 80
+        exposedPort: 80
+        expose: true
+      websecure:
+        port: 443
+        exposedPort: 443
+        expose: true
+        # Enable HTTP/3
+        http3:
+          enabled: true
+      metrics:
+        port: 9100
+        expose: false  # Don't expose externally
+    
+    # Enable dashboard (secure it in production!)
+    ingressRoute:
+      dashboard:
+        enabled: true
+        matchRule: Host(`traefik.local.example.com`)  # Change this!
+        entryPoints:
+          - websecure
+    
+    # Additional arguments
+    additionalArguments:
+      # Access logs
+      - "--accesslog=true"
+      - "--accesslog.filepath=/data/access.log"
+      # Enable Prometheus metrics
+      - "--metrics.prometheus=true"
+      - "--metrics.prometheus.entrypoint=metrics"
+    
+    # Logs
+    logs:
+      general:
+        level: INFO
+      access:
+        enabled: true
+    
+    # Persistence for certificates
+    persistence:
+      enabled: true
+      name: data
+      accessMode: ReadWriteOnce
+      size: 128Mi
+      storageClass: local-path  # Adjust based on your storage class
+      path: /data
+    
+    # Resources
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    
+    # Security context
+    securityContext:
+      capabilities:
+        drop: [ALL]
+      readOnlyRootFilesystem: true
+      runAsGroup: 65532
+      runAsNonRoot: true
+      runAsUser: 65532
+    
+    podSecurityContext:
+      fsGroup: 65532
