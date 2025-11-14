@@ -1,107 +1,50 @@
-# Talos Secrets - NEVER COMMIT THESE
+# Talos sensitive files
 secrets.yaml
 talosconfig
-*.key
-*.crt
-*.pem
+talos/secrets.yaml
+talos/talosconfig
 
-# Kubernetes Configs with Credentials
+# Generated final configs (patches committed, finals gitignored)
+talos/controlplane/controlplane-*.yaml
+talos/worker/worker-*.yaml
+!talos/controlplane/*-patch.yaml
+!talos/worker/*-patch.yaml
+
+# Keep base templates
+!talos/controlplane.yaml
+!talos/worker.yaml
+
+# Kubernetes credentials
 kubeconfig
-kubeconfig.*
 *.kubeconfig
 
-# Encrypted files (keep .enc.yaml files, ignore decrypted versions)
-secrets-dec.yaml
-*-dec.yaml
-
-# SOPS files
-.sops.yaml.bak
-
-# Talos temporary files
-*.bak
-*.tmp
-
-# Downloaded Images
-*.iso
+# Downloaded images
+images/
 *.raw
 *.raw.xz
-*.img
-*.img.xz
 
-# Schematic files (optional - you may want to commit these)
-# schematic.yaml
-
-# Flux SOPS keys
-*.asc
-*.gpg
-!.sops.keys/.gitkeep
-
-# Age keys
-age.agekey
-*.age
-
-# Terraform / OpenTofu
+# Terraform/OpenTofu
 *.tfstate
 *.tfstate.*
-*.tfvars
 .terraform/
 .terraform.lock.hcl
 
-# Ansible
-*.retry
-.vault_pass
+# Environment files
+.env
+.env.local
 
-# Scripts output
-logs/
-*.log
-
-# IDE and Editor files
+# IDE & OS
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 .DS_Store
-
-# OS files
 Thumbs.db
-.Spotlight-V100
-.Trashes
 
-# Temporary directories
+# Backup & logs
+*.bak
+*.backup
+*.log
 tmp/
 temp/
-.tmp/
-
-# Backup files
-backup/
-*.backup
-
-# Personal notes (optional)
-notes.md
-TODO.md
-SCRATCH.md
-
-# Local environment files
-.env
-.env.local
-*.local
-
-# Compiled files
-*.pyc
-__pycache__/
-node_modules/
-
-# Test outputs
-test-results/
-coverage/
-
-# Helm charts cache
-charts/*.tgz
-
-# Keep example/template files
-!*.example
-!*.template
-!*.sample
-
-talos-images/
