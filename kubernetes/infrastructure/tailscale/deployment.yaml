@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+  labels:
+    app: tailscale-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tailscale-router
+  template:
+    metadata:
+      labels:
+        app: tailscale-router
+    spec:
+      serviceAccountName: tailscale
+      containers:
+      - name: tailscale
+        image: tailscale/tailscale:latest
+        imagePullPolicy: Always
+        env:
+        - name: TS_AUTHKEY
+          valueFrom:
+            secretKeyRef:
+              name: tailscale-auth
+              key: TS_AUTHKEY
+        - name: TS_ROUTES
+          value: "192.168.99.0/24"
+        - name: TS_STATE_DIR
+          value: /var/lib/tailscale
+        - name: TS_USERSPACE
+          value: "true"
+        - name: TS_HOSTNAME
+          value: "k8s-subnet-router"
+        volumeMounts:
+        - name: state
+          mountPath: /var/lib/tailscale
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+      volumes:
+      - name: state
+        emptyDir: {}
