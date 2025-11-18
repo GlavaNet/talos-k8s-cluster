@@ -7,4 +7,4 @@ spec:
   ipAddressPools:
     - default-pool
   interfaces:
-    - eth0
+    - end0
