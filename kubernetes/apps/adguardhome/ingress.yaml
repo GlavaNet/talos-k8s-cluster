@@ -18,7 +18,7 @@ spec:
           service:
             name: adguardhome-web
             port:
-              number: 80
+              number: 3000
   tls:
   - hosts:
     - adguard.glavanet.local
