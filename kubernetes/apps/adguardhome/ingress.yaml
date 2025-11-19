@@ -10,7 +10,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-  - host: adguard.yourdomain.com
+  - host: adguard.glavanet.local
     http:
       paths:
       - path: /
@@ -22,5 +22,5 @@ spec:
               number: 3000
   tls:
   - hosts:
-    - adguard.yourdomain.com
+    - adguard.glavanet.local
     secretName: adguardhome-tls

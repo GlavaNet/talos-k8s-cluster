@@ -10,8 +10,8 @@ spec:
     name: selfsigned-issuer
     kind: ClusterIssuer
   dnsNames:
-    - adguard.local.example.com
+    - adguard.glavanet.local
     - adguardhome.local
-  commonName: adguard.local.example.com
+  commonName: adguard.glavanet.local
   duration: 2160h  # 90 days
   renewBefore: 360h  # 15 days before expiry
