@@ -38,9 +38,6 @@ spec:
           mountPath: /opt/adguardhome/conf
         - name: data
           mountPath: /opt/adguardhome/work
-        - name: adguardhome-config
-          mountPath: /opt/adguardhome/conf/AdGuardHome.yaml
-          subPath: AdGuardHome.yaml
         resources:
           requests:
             memory: "256Mi"
@@ -60,11 +57,6 @@ spec:
           periodSeconds: 5
       volumes:
       - name: config
-        persistentVolumeClaim:
-          claimName: adguardhome-config
+        emptyDir: {}
       - name: data
-        persistentVolumeClaim:
-          claimName: adguardhome-data
-      - name: adguardhome-config
-        configMap:
-          name: adguardhome-config
+        emptyDir: {}
