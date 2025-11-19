@@ -38,9 +38,9 @@ spec:
           mountPath: /opt/adguardhome/conf
         - name: data
           mountPath: /opt/adguardhome/work
-        - name: adguardhome-config
-          mountPath: /opt/adguardhome/conf/AdGuardHome.yaml
-          subPath: AdGuardHome.yaml
+        # - name: adguardhome-config
+        #   mountPath: /opt/adguardhome/conf/AdGuardHome.yaml
+        #   subPath: AdGuardHome.yaml
         resources:
           requests:
             memory: "256Mi"
