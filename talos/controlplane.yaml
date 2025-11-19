@@ -165,7 +165,9 @@ machine:
     #       #     ip: 172.16.199.55 # Specifies the IP address to be used.
 
     # # Used to statically set the nameservers for the machine.
-    # nameservers:
+      nameservers:
+          - 1.1.1.1
+          - 9.9.9.9
     #     - 8.8.8.8
     #     - 1.1.1.1
 

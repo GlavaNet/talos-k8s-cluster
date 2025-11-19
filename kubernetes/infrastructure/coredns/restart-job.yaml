@@ -1,0 +1,50 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: coredns-restarter
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: coredns-restarter
+  namespace: kube-system
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "patch"]
+  resourceNames: ["coredns"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: coredns-restarter
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: coredns-restarter
+subjects:
+- kind: ServiceAccount
+  name: coredns-restarter
+  namespace: kube-system
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: restart-coredns
+  namespace: kube-system
+spec:
+  template:
+    spec:
+      serviceAccountName: coredns-restarter
+      containers:
+      - name: kubectl
+        image: bitnami/kubectl:latest
+        command:
+          - /bin/sh
+          - -c
+          - |
+            kubectl rollout restart deployment coredns -n kube-system
+      restartPolicy: OnFailure
