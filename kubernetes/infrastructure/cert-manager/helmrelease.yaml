@@ -23,7 +23,7 @@ spec:
   chart:
     spec:
       chart: cert-manager
-      version: "v1.15.x"
+      version: "v1.16.2"
       sourceRef:
         kind: HelmRepository
         name: jetstack
@@ -34,3 +34,7 @@ spec:
     global:
       leaderElection:
         namespace: cert-manager
+    prometheus:
+      enabled: false
+    webhook:
+      timeoutSeconds: 30

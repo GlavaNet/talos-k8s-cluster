@@ -48,4 +48,5 @@ Thumbs.db
 *.log
 tmp/
 temp/
-kubernetes/infrastructure/tailscale/oauth-secret.yaml
+kubernetes/infrastructure/cert-manager/clusterissuer-staging.yaml
+kubernetes/infrastructure/cert-manager/clusterissuer-production.yaml
