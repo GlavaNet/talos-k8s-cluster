@@ -3,12 +3,8 @@ kind: Deployment
 metadata:
   name: adguardhome
   namespace: adguardhome
-  labels:
-    app: adguardhome
 spec:
-  replicas: 1
-  strategy:
-    type: Recreate
+  replicas: 1  # Single instance is sufficient
   selector:
     matchLabels:
       app: adguardhome
@@ -21,46 +17,19 @@ spec:
       - name: adguardhome
         image: adguard/adguardhome:latest
         ports:
-        - name: dns-tcp
-          containerPort: 53
+        - containerPort: 53
+          name: dns-tcp
           protocol: TCP
-        - name: dns-udp
-          containerPort: 53
+        - containerPort: 53
+          name: dns-udp
           protocol: UDP
-        - name: http
-          containerPort: 80
-          protocol: TCP
-        env:
-        - name: TZ
-          value: "America/Los_Angeles"
+        - containerPort: 3000
+          name: http
         volumeMounts:
         - name: config
           mountPath: /opt/adguardhome/conf
         - name: data
           mountPath: /opt/adguardhome/work
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 60
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 5
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 30
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
       volumes:
       - name: config
         persistentVolumeClaim:
