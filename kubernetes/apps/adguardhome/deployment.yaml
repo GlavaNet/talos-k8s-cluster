@@ -30,6 +30,7 @@ spec:
             sed -e "s|USERNAME_PLACEHOLDER|${USERNAME}|g" \
                 -e "s|PASSWORD_HASH_PLACEHOLDER|${PASSWORD_HASH}|g" \
                 /bootstrap/AdGuardHome.yaml > /opt/adguardhome/conf/AdGuardHome.yaml
+            echo "Configuration bootstrapped with username: ${USERNAME}"
           else
             echo "Configuration already exists, skipping bootstrap"
           fi
