@@ -8,8 +8,8 @@ data:
     bind_host: 0.0.0.0
     bind_port: 3000
     users:
-      - name: admin
-        password: $2a$10$CHANGE_THIS_HASH  # Generate with: htpasswd -nbB admin yourpassword
+      - name: USERNAME_PLACEHOLDER
+        password: PASSWORD_HASH_PLACEHOLDER
     auth_attempts: 5
     block_auth_min: 15
     http_proxy: ""

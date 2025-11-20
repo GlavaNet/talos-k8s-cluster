@@ -26,10 +26,24 @@ spec:
         - |
           if [ ! -f /opt/adguardhome/conf/AdGuardHome.yaml ]; then
             echo "Bootstrapping AdGuardHome configuration..."
-            cp /bootstrap/AdGuardHome.yaml /opt/adguardhome/conf/AdGuardHome.yaml
+            # Replace placeholders with actual values from secrets
+            sed -e "s|USERNAME_PLACEHOLDER|${USERNAME}|g" \
+                -e "s|PASSWORD_HASH_PLACEHOLDER|${PASSWORD_HASH}|g" \
+                /bootstrap/AdGuardHome.yaml > /opt/adguardhome/conf/AdGuardHome.yaml
           else
             echo "Configuration already exists, skipping bootstrap"
           fi
+        env:
+        - name: USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: adguardhome-password
+              key: username
+        - name: PASSWORD_HASH
+          valueFrom:
+            secretKeyRef:
+              name: adguardhome-password
+              key: password-hash
         volumeMounts:
         - name: config
           mountPath: /opt/adguardhome/conf
