@@ -34,6 +34,8 @@ spec:
           value: "true"
         - name: TS_HOSTNAME
           value: "k8s-subnet-router"
+        - name: TS_EXTRA_ARGS
+          value: "--advertise-exit-node"
         volumeMounts:
         - name: state
           mountPath: /var/lib/tailscale
