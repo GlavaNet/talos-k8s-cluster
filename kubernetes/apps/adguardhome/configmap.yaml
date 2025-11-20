@@ -1,19 +1,19 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: adguardhome-config
+  name: adguardhome-bootstrap
   namespace: adguardhome
 data:
   AdGuardHome.yaml: |
     bind_host: 0.0.0.0
-    bind_port: 3000
+    bind_port: 80
     users:
       - name: admin
-        password: $2a$10$changethispasswordhash
+        password: $2a$10$CHANGE_THIS_HASH  # Generate with: htpasswd -nbB admin yourpassword
     auth_attempts: 5
     block_auth_min: 15
     http_proxy: ""
-    language: en
+    language: ""
     theme: auto
     dns:
       bind_hosts:
@@ -27,15 +27,13 @@ data:
       upstream_dns:
         - https://dns.cloudflare.com/dns-query
         - https://dns.quad9.net/dns-query
-        - https://doh.opendns.com/dns-query
       upstream_dns_file: ""
       bootstrap_dns:
         - 1.1.1.1
         - 1.0.0.1
         - 9.9.9.9
       fallback_dns: []
-      all_servers: false
-      fastest_addr: false
+      upstream_mode: load_balance
       fastest_timeout: 1s
       allowed_clients: []
       disallowed_clients: []
@@ -70,6 +68,8 @@ data:
       dns64_prefixes: []
       serve_http3: false
       use_http3_upstreams: false
+      serve_plain_dns: true
+      hostsfile_enabled: true
     tls:
       enabled: false
       server_name: ""
@@ -77,6 +77,8 @@ data:
       port_https: 443
       port_dns_over_tls: 853
       port_dns_over_quic: 853
+      port_dnscrypt: 0
+      dnscrypt_config_file: ""
       allow_unencrypted_doh: false
       certificate_chain: ""
       private_key: ""
@@ -84,12 +86,14 @@ data:
       private_key_path: ""
       strict_sni_check: false
     querylog:
+      dir_path: ""
       ignored: []
       interval: 2160h
       size_memory: 1000
       enabled: true
       file_enabled: true
     statistics:
+      dir_path: ""
       ignored: []
       interval: 24h
       enabled: true
@@ -102,10 +106,52 @@ data:
         url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_2.txt
         name: AdAway Default Blocklist
         id: 2
+      - enabled: true
+        url: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+        name: Steven Black's Unified Hosts
+        id: 3
+      - enabled: true
+        url: https://raw.githubusercontent.com/PolishFiltersTeam/KADhosts/master/KADhosts.txt
+        name: KADhosts
+        id: 4
+      - enabled: true
+        url: https://someonewhocares.org/hosts/zero/hosts
+        name: Dan Pollock's List
+        id: 5
     whitelist_filters: []
     user_rules: []
     dhcp:
       enabled: false
+    filtering:
+      blocking_ipv4: ""
+      blocking_ipv6: ""
+      blocked_services:
+        schedule:
+          time_zone: UTC
+        ids: []
+      protection_disabled_until: null
+      safe_search:
+        enabled: false
+        bing: true
+        duckduckgo: true
+        google: true
+        pixabay: true
+        yandex: true
+        youtube: true
+      blocking_mode: default
+      parental_block_host: family-block.dns.adguard.com
+      safebrowsing_block_host: standard-block.dns.adguard.com
+      rewrites: []
+      safebrowsing_cache_size: 1048576
+      safesearch_cache_size: 1048576
+      parental_cache_size: 1048576
+      cache_time: 30
+      filters_update_interval: 24
+      blocked_response_ttl: 10
+      filtering_enabled: true
+      parental_enabled: false
+      safebrowsing_enabled: false
+      protection_enabled: true
     clients:
       runtime_sources:
         whois: true
