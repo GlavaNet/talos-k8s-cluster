@@ -6,7 +6,7 @@ metadata:
 data:
   AdGuardHome.yaml: |
     bind_host: 0.0.0.0
-    bind_port: 80
+    bind_port: 3000
     users:
       - name: admin
         password: $2a$10$CHANGE_THIS_HASH  # Generate with: htpasswd -nbB admin yourpassword
