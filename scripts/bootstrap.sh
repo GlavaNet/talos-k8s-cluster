@@ -6,7 +6,52 @@ export TALOSCONFIG="./talos/talosconfig"
 FIRST_CP="192.168.99.101"
 VIP="192.168.99.100"
 
-# ... existing bootstrap code ...
+echo "Bootstrapping Talos Kubernetes cluster..."
+echo ""
+
+echo "==> Bootstrapping etcd on first control plane (${FIRST_CP})"
+if talosctl bootstrap \
+    --nodes "${FIRST_CP}" \
+    --endpoints "${FIRST_CP}"; then
+    echo "    ✓ Bootstrap initiated"
+else
+    echo "    ✗ Bootstrap failed"
+    exit 1
+fi
+
+echo ""
+echo "Waiting for cluster to become healthy (this may take 5-10 minutes on RPi)..."
+echo "Monitoring health..."
+
+if talosctl --nodes "${FIRST_CP}" health --wait-timeout 15m; then
+    echo ""
+    echo "✓ Cluster is healthy!"
+else
+    echo ""
+    echo "✗ Cluster health check timed out"
+    echo "Run: talosctl --nodes ${FIRST_CP} dmesg --follow"
+    exit 1
+fi
+
+echo ""
+echo "==> Updating talosconfig to use VIP endpoint"
+talosctl config endpoint "${VIP}"
+
+echo ""
+echo "==> Testing VIP connectivity"
+if talosctl --nodes "${VIP}" version &>/dev/null; then
+    echo "    ✓ VIP is responding"
+else
+    echo "    ⚠ VIP not responding yet, using control plane node"
+fi
+
+echo ""
+echo "==> Retrieving kubeconfig"
+talosctl kubeconfig ./kubeconfig
+
+echo ""
+echo "==> Verifying cluster nodes"
+kubectl --kubeconfig=./kubeconfig get nodes -o wide
 
 echo ""
 echo "==> Creating AdGuardHome namespace and password secret"
@@ -72,6 +117,46 @@ unset ADGUARDHOME_USERNAME
 unset ADGUARDHOME_PASSWORD
 unset ADGUARDHOME_PASSWORD_CONFIRM
 unset PASSWORD_HASH
+
+echo ""
+echo "==> Creating Vaultwarden namespace and admin token secret"
+
+# Prompt for Vaultwarden admin token
+while true; do
+    read -sp "Enter Vaultwarden admin token (or leave empty to generate): " VAULTWARDEN_ADMIN_TOKEN
+    echo ""
+    
+    if [ -z "$VAULTWARDEN_ADMIN_TOKEN" ]; then
+        # Generate a secure token if none provided
+        VAULTWARDEN_ADMIN_TOKEN=$(openssl rand -base64 32)
+        echo "    ℹ Generated admin token: ${VAULTWARDEN_ADMIN_TOKEN}"
+    fi
+    
+    if [ -z "$VAULTWARDEN_ADMIN_TOKEN" ]; then
+        echo "    ✗ Token cannot be empty. Please try again."
+        echo ""
+    else
+        echo "    ✓ Admin token set"
+        break
+    fi
+done
+
+# Create namespace if it doesn't exist
+kubectl --kubeconfig=./kubeconfig create namespace vaultwarden --dry-run=client -o yaml | kubectl --kubeconfig=./kubeconfig apply -f -
+
+# Create the secret
+kubectl --kubeconfig=./kubeconfig create secret generic vaultwarden-admin-token \
+    --from-literal=admin-token="${VAULTWARDEN_ADMIN_TOKEN}" \
+    -n vaultwarden \
+    --dry-run=client -o yaml | kubectl --kubeconfig=./kubeconfig apply -f -
+
+echo "    ✓ Vaultwarden admin token secret created"
+
+# Clear token variable from memory
+unset VAULTWARDEN_ADMIN_TOKEN
+
+echo ""
+echo "✓ Vaultwarden bootstrap complete!"
 
 echo ""
 echo "✓ Cluster bootstrap complete!"

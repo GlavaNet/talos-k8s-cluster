@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vaultwarden-config
+  namespace: vaultwarden
+data:
+  DOMAIN: "https://vault.glavanet.local"
+  SIGNUPS_ALLOWED: "true"
+  WEBSOCKET_ENABLED: "true"
+  LOG_LEVEL: "info"

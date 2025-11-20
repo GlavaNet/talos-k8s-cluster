@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vaultwarden
+  namespace: vaultwarden
+  labels:
+    app: vaultwarden
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vaultwarden
+  template:
+    metadata:
+      labels:
+        app: vaultwarden
+    spec:
+      containers:
+      - name: vaultwarden
+        image: vaultwarden/server:latest
+        ports:
+        - containerPort: 80
+          name: http
+        - containerPort: 3012
+          name: websocket
+        env:
+        - name: DOMAIN
+          valueFrom:
+            configMapKeyRef:
+              name: vaultwarden-config
+              key: DOMAIN
+        - name: SIGNUPS_ALLOWED
+          valueFrom:
+            configMapKeyRef:
+              name: vaultwarden-config
+              key: SIGNUPS_ALLOWED
+        - name: WEBSOCKET_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: vaultwarden-config
+              key: WEBSOCKET_ENABLED
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: vaultwarden-config
+              key: LOG_LEVEL
+        - name: ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: vaultwarden-admin-token
+              key: admin-token
+        volumeMounts:
+        - name: vaultwarden-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: vaultwarden-data
+        persistentVolumeClaim:
+          claimName: vaultwarden-data
