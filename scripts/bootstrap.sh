@@ -6,61 +6,24 @@ export TALOSCONFIG="./talos/talosconfig"
 FIRST_CP="192.168.99.101"
 VIP="192.168.99.100"
 
-echo "Bootstrapping Talos Kubernetes cluster..."
-echo ""
-
-echo "==> Bootstrapping etcd on first control plane (${FIRST_CP})"
-if talosctl bootstrap \
-    --nodes "${FIRST_CP}" \
-    --endpoints "${FIRST_CP}"; then
-    echo "    ✓ Bootstrap initiated"
-else
-    echo "    ✗ Bootstrap failed"
-    exit 1
-fi
-
-echo ""
-echo "Waiting for cluster to become healthy (this may take 5-10 minutes on RPi)..."
-echo "Monitoring health..."
-
-if talosctl --nodes "${FIRST_CP}" health --wait-timeout 15m; then
-    echo ""
-    echo "✓ Cluster is healthy!"
-else
-    echo ""
-    echo "✗ Cluster health check timed out"
-    echo "Run: talosctl --nodes ${FIRST_CP} dmesg --follow"
-    exit 1
-fi
-
-echo ""
-echo "==> Updating talosconfig to use VIP endpoint"
-talosctl config endpoint "${VIP}"
-
-echo ""
-echo "==> Testing VIP connectivity"
-if talosctl --nodes "${VIP}" version &>/dev/null; then
-    echo "    ✓ VIP is responding"
-else
-    echo "    ⚠ VIP not responding yet, using control plane node"
-fi
-
-echo ""
-echo "==> Retrieving kubeconfig"
-talosctl kubeconfig ./kubeconfig
-
-echo ""
-echo "==> Verifying cluster nodes"
-kubectl --kubeconfig=./kubeconfig get nodes -o wide
+# ... existing bootstrap code ...
 
 echo ""
 echo "==> Creating AdGuardHome namespace and password secret"
 
+# Prompt for AdGuardHome username
+read -p "Enter AdGuardHome username (default: admin): " ADGUARDHOME_USERNAME
+if [ -z "$ADGUARDHOME_USERNAME" ]; then
+    ADGUARDHOME_USERNAME="admin"
+fi
+echo "    ✓ Username set to: ${ADGUARDHOME_USERNAME}"
+echo ""
+
 # Prompt for AdGuardHome password with confirmation
 while true; do
-    read -sp "Enter AdGuardHome admin password: " ADGUARDHOME_PASSWORD
+    read -sp "Enter AdGuardHome password: " ADGUARDHOME_PASSWORD
     echo ""
-    read -sp "Confirm AdGuardHome admin password: " ADGUARDHOME_PASSWORD_CONFIRM
+    read -sp "Confirm AdGuardHome password: " ADGUARDHOME_PASSWORD_CONFIRM
     echo ""
     
     if [ "$ADGUARDHOME_PASSWORD" = "$ADGUARDHOME_PASSWORD_CONFIRM" ]; then
@@ -80,9 +43,9 @@ done
 # Check if htpasswd is available
 if ! command -v htpasswd &> /dev/null; then
     echo "    ⚠ htpasswd not found, using Docker to generate hash..."
-    PASSWORD_HASH=$(docker run --rm httpd:alpine htpasswd -nbB admin "${ADGUARDHOME_PASSWORD}" | cut -d ":" -f 2)
+    PASSWORD_HASH=$(docker run --rm httpd:alpine htpasswd -nbB "${ADGUARDHOME_USERNAME}" "${ADGUARDHOME_PASSWORD}" | cut -d ":" -f 2)
 else
-    PASSWORD_HASH=$(htpasswd -nbB admin "${ADGUARDHOME_PASSWORD}" | cut -d ":" -f 2)
+    PASSWORD_HASH=$(htpasswd -nbB "${ADGUARDHOME_USERNAME}" "${ADGUARDHOME_PASSWORD}" | cut -d ":" -f 2)
 fi
 
 # Create namespace if it doesn't exist
@@ -95,15 +58,17 @@ kubectl --kubeconfig=./kubeconfig label namespace adguardhome \
     pod-security.kubernetes.io/warn=privileged \
     --overwrite
 
-# Create the secret
+# Create the secret with BOTH username and password-hash
 kubectl --kubeconfig=./kubeconfig create secret generic adguardhome-password \
     --from-literal=password-hash="${PASSWORD_HASH}" \
+    --from-literal=username="${ADGUARDHOME_USERNAME}" \
     -n adguardhome \
     --dry-run=client -o yaml | kubectl --kubeconfig=./kubeconfig apply -f -
 
-echo "    ✓ AdGuardHome password secret created"
+echo "    ✓ AdGuardHome credentials secret created for user: ${ADGUARDHOME_USERNAME}"
 
 # Clear password variables from memory
+unset ADGUARDHOME_USERNAME
 unset ADGUARDHOME_PASSWORD
 unset ADGUARDHOME_PASSWORD_CONFIRM
 unset PASSWORD_HASH
