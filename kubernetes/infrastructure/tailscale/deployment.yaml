@@ -16,6 +16,19 @@ spec:
         app: tailscale-router
     spec:
       serviceAccountName: tailscale
+      initContainers:
+      - name: init-sysctl
+        image: busybox:latest
+        securityContext:
+          privileged: true
+        command:
+        - sh
+        - -c
+        - |
+          sysctl -w net.ipv4.ip_forward=1
+          sysctl -w net.ipv6.conf.all.forwarding=1
+          cat /proc/sys/net/ipv4/ip_forward
+          cat /proc/sys/net/ipv6/conf/all/forwarding
       containers:
       - name: tailscale
         image: tailscale/tailscale:latest
