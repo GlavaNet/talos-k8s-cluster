@@ -6,6 +6,7 @@ Production-ready, highly-available Kubernetes cluster running on Raspberry Pi 4B
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.31+-326CE5)](https://kubernetes.io/)
 [![FluxCD](https://img.shields.io/badge/FluxCD-v2.x-5468FF)](https://fluxcd.io/)
 [![MetalLB](https://img.shields.io/badge/MetalLB-v0.14.9-orange)](https://metallb.universe.tf/)
+[![Traefik](https://img.shields.io/badge/Traefik-v3.1-24A1C1)](https://traefik.io/)
 
 ---
 
@@ -13,6 +14,7 @@ Production-ready, highly-available Kubernetes cluster running on Raspberry Pi 4B
 
 - [Overview](#overview)
 - [Architecture](#architecture)
+- [Deployed Components](#deployed-components)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [Detailed Deployment Guide](#detailed-deployment-guide)
@@ -31,6 +33,7 @@ This repository provides Infrastructure as Code (IaC) for deploying a highly-ava
 - **Talos OS**: Immutable, API-driven Linux distribution built for Kubernetes
 - **Pre-baked Images**: Custom images with static IPs from Talos Image Factory
 - **MetalLB**: Bare-metal load balancer for LoadBalancer service type
+- **Traefik**: Modern HTTP reverse proxy and load balancer
 - **FluxCD**: GitOps continuous delivery for automatic application deployment
 - **High Availability**: 3-node control plane with VIP for API server access
 
@@ -40,6 +43,7 @@ This repository provides Infrastructure as Code (IaC) for deploying a highly-ava
 - ✅ No SSH or shell access - API-only management
 - ✅ Automatic updates - GitOps workflow with Flux
 - ✅ Production-ready - HA control plane with etcd quorum
+- ✅ Ingress ready - Traefik deployed for HTTP/HTTPS routing
 
 ---
 
@@ -68,56 +72,80 @@ Network: 192.168.99.0/24
                         ┌────▼────┐
                         │ Worker  │
                         │  .111   │
+                        │  Pods   │
                         └─────────┘
+
+MetalLB IP Pool: 192.168.99.120-140 (21 IPs)
 ```
 
-### IP Allocation
+### Hardware Specifications
 
-| Component | IP Range | Purpose |
-|-----------|----------|---------|
-| Gateway | 192.168.99.1 | Router |
-| VIP | 192.168.99.100 | Kubernetes API HA endpoint |
-| Control Planes | 192.168.99.101-103 | Control plane nodes (3x) |
-| Workers | 192.168.99.111+ | Worker nodes |
-| MetalLB Pool | 192.168.99.120-140 | LoadBalancer services (21 IPs) |
+| Component | Specification |
+|-----------|---------------|
+| **Nodes** | 4x Raspberry Pi 4B (8GB RAM) |
+| **Storage** | High-endurance microSD cards (32GB+) |
+| **Network** | Gigabit Ethernet (wired) |
+| **Power** | USB-C 3A power supplies |
+| **OS** | Talos Linux (immutable) |
 
-### Node Specifications
+---
 
-| Node | Role | IP | Schematic ID (last 8) |
-|------|------|----|-----------------------|
-| controlplane-01 | Control Plane | 192.168.99.101 | ...b29de1 |
-| controlplane-02 | Control Plane | 192.168.99.102 | ...91c855 |
-| controlplane-03 | Control Plane | 192.168.99.103 | ...e66cdc |
-| worker-01 | Worker | 192.168.99.111 | ...f30ce3 |
+## Deployed Components
 
-**Note:** Control planes are configured with `allowSchedulingOnControlPlanes: true` for efficient resource utilization.
+### Core Infrastructure
+
+| Component | Version | Purpose | Status |
+|-----------|---------|---------|--------|
+| **Talos OS** | v1.11.5 | Immutable OS for Kubernetes | ✅ Active |
+| **Kubernetes** | v1.31+ | Container orchestration | ✅ Active |
+| **FluxCD** | v2.x | GitOps continuous delivery | ✅ Active |
+| **MetalLB** | v0.14.9 | Load balancer (Layer 2) | ✅ Active |
+| **Traefik** | v3.1 | Ingress controller & reverse proxy | ✅ Active |
+
+### Applications
+
+| Application | Purpose | Namespace | Credentials |
+|-------------|---------|-----------|-------------|
+| **AdGuardHome** | Network-wide DNS ad blocker | `adguardhome` | Set during bootstrap |
+| **Vaultwarden** | Self-hosted password manager | `vaultwarden` | Admin token set during bootstrap |
+
+All applications are automatically deployed and managed by FluxCD after cluster bootstrap.
+
+### Network Configuration
+
+- **Pod Network**: `10.244.0.0/16` (Flannel CNI)
+- **Service Network**: `10.96.0.0/12`
+- **MetalLB Pool**: `192.168.99.120-140`
+- **Traefik LoadBalancer**: `192.168.99.120`
+- **Cluster VIP**: `192.168.99.100`
+
+### Traefik Configuration
+
+Traefik is deployed as a DaemonSet with the following features:
+- HTTP (port 80) and HTTPS (port 443) entry points
+- HTTP/3 support enabled
+- LoadBalancer service type using MetalLB
+- Dashboard available at `traefik.glavanet.local`
+- Prometheus metrics endpoint
+- Access logging enabled
+- Local traffic policy for source IP preservation
 
 ---
 
 ## Prerequisites
 
-### Hardware Requirements
+### Required Tools
 
-- **4x Raspberry Pi 4B** (4GB RAM minimum, 8GB recommended)
-- **4x microSD cards** (32GB+ Class 10/A1 or better)
-  - Or 4x USB 3.0 drives for better performance
-- **Network switch** (all nodes on same Layer 2 network)
-- **Stable power supply** (2.5A+ per Pi)
-
-### Software Requirements
-
-Install these tools on your workstation:
+Install these on your local machine:
 
 ```bash
-# Talos CLI
+# macOS
+brew install talosctl kubectl flux
+
+# Linux
 curl -sL https://talos.dev/install | sh
-
-# kubectl
-# macOS: brew install kubectl
-# Linux: https://kubernetes.io/docs/tasks/tools/
-
-# Flux CLI
-curl -s https://fluxcd.io/install.sh | sudo bash
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+curl -s https://fluxcd.io/install.sh | bash
 
 # Verify installations
 talosctl version
@@ -125,261 +153,188 @@ kubectl version --client
 flux version
 ```
 
+### Required Accounts & Credentials
+
+1. **GitHub Account**: For GitOps repository
+2. **GitHub Personal Access Token**: 
+   - Scopes: `repo`, `workflow`
+   - Create at: https://github.com/settings/tokens
+
 ### Network Requirements
 
-- **Static IPs reserved**: 192.168.99.100-111, 192.168.99.120-140
-- **DHCP exclusions**: Configure router to exclude above IPs
-- **Layer 2 connectivity**: All nodes on same VLAN/subnet
-- **Firewall rules**: Allow ports 50000 (Talos API), 6443 (K8s API)
-
-### GitHub Setup
-
-```bash
-# Generate GitHub Personal Access Token with 'repo' permissions
-# https://github.com/settings/tokens
-
-# Export credentials
-export GITHUB_TOKEN=<your-token>
-export GITHUB_USER=<your-username>
-export GITHUB_REPO=<your-repo-name>
-```
+- **Static IP Range**: Available IPs in `192.168.99.0/24`
+- **Reserved IPs**:
+  - `192.168.99.100`: Cluster VIP (HA API)
+  - `192.168.99.101-103`: Control plane nodes
+  - `192.168.99.111`: Worker node
+  - `192.168.99.120-140`: MetalLB pool
 
 ---
 
 ## Quick Start
 
-**For experienced users - full guide below:**
+For experienced users who want to get running quickly:
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/${GITHUB_USER}/${GITHUB_REPO}.git
-cd ${GITHUB_REPO}
+git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
+cd YOUR_REPO
 
-# 2. Download images
-chmod +x scripts/download-talos-images.sh
+# 2. Set environment variables
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxxx
+export GITHUB_USER=your-username
+export GITHUB_REPO=your-repo-name
+
+# 3. Download and flash Talos images
 ./scripts/download-talos-images.sh
 
-# 3. Flash to SD cards (repeat for all 4 nodes)
-sudo dd if=images/controlplane-01.raw of=/dev/sdX bs=4M status=progress conv=fsync
+# 4. Flash images to SD cards and boot Pis
 
-# 4. Boot nodes and generate configs
-chmod +x scripts/generate-configs.sh
+# 5. Generate cluster configurations
 ./scripts/generate-configs.sh
 
-# 5. Apply configurations
-chmod +x scripts/apply-configs.sh
+# 6. Apply configurations
 ./scripts/apply-configs.sh
 
-# 6. Bootstrap cluster
-chmod +x scripts/bootstrap.sh
+# 7. Bootstrap cluster (will prompt for AdGuardHome & Vaultwarden credentials)
 ./scripts/bootstrap.sh
 
-# 7. Install MetalLB
+# 8. Install MetalLB
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
+kubectl wait --namespace metallb-system --for=condition=ready pod --selector=app=metallb --timeout=90s
 kubectl apply -f kubernetes/infrastructure/metallb/
 
-# 8. Bootstrap Flux
+# 9. Bootstrap FluxCD
 flux bootstrap github \
   --owner=${GITHUB_USER} \
   --repository=${GITHUB_REPO} \
   --branch=main \
   --path=kubernetes/flux \
-  --personal
+  --personal \
+  --token-string=${GITHUB_TOKEN}
+
+# 10. Verify deployment
+kubectl get nodes
+kubectl get pods -A
+flux get kustomizations
 ```
 
 ---
 
 ## Detailed Deployment Guide
 
-### Step 1: Prepare Images
+### Step 1: Prepare Talos Images
 
-#### 1.1 Download Node-Specific Images
+#### 1.1 Access Talos Image Factory
 
-Each node has a pre-configured image with static IP address baked in:
+Visit [factory.talos.dev](https://factory.talos.dev) to generate custom images with static IPs.
 
-```bash
-cd scripts
-chmod +x download-talos-images.sh
-./download-talos-images.sh
+#### 1.2 Create Schematics
+
+For each node, create a schematic with:
+- **Platform**: `metal-rpi_generic`
+- **Extensions**: None required for basic setup
+- **Customizations**: Static network configuration
+
+Example for `controlplane-01`:
+```yaml
+networking:
+  interfaces:
+    - interface: eth0
+      addresses:
+        - 192.168.99.101/24
+      routes:
+        - network: 0.0.0.0/0
+          gateway: 192.168.99.1
+      dhcp: false
+  hostname: controlplane-01
+  nameservers:
+    - 192.168.99.1
 ```
 
-This downloads 4 images to `images/`:
-- `controlplane-01.raw` (192.168.99.101)
-- `controlplane-02.raw` (192.168.99.102)
-- `controlplane-03.raw` (192.168.99.103)
-- `worker-01.raw` (192.168.99.111)
+#### 1.3 Download Images
 
-**Verify downloads:**
 ```bash
-ls -lh images/
-# Should show 4 .raw files, ~300MB each
+# Use the download script
+./scripts/download-talos-images.sh
+
+# Or manually download from factory.talos.dev
+# Images will be in images/ directory
 ```
 
-#### 1.2 Flash SD Cards
+#### 1.4 Flash SD Cards
 
-**Label your SD cards** before flashing to avoid confusion!
-
-**macOS:**
 ```bash
-# Find SD card
-diskutil list
-
-# Unmount (replace diskX)
+# macOS
+diskutil list  # Find your SD card (e.g., /dev/disk4)
 diskutil unmountDisk /dev/diskX
-
-# Flash image
-sudo dd if=images/controlplane-01.raw of=/dev/rdiskX bs=4m status=progress
-
-# Eject
+sudo dd if=images/controlplane-01.raw of=/dev/rdiskX bs=4M status=progress
 diskutil eject /dev/diskX
-```
 
-**Linux:**
-```bash
-# Find SD card
-lsblk
-
-# Flash image (replace sdX)
+# Linux
+lsblk  # Find your SD card (e.g., /dev/sdb)
+sudo umount /dev/sdX*
 sudo dd if=images/controlplane-01.raw of=/dev/sdX bs=4M status=progress conv=fsync
-
-# Sync
-sync
+sudo eject /dev/sdX
 ```
 
-**Windows:**
-- Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
-- Select "Use custom" and choose `.raw` file
-- Write to SD card
-
-**Repeat for all 4 nodes**, ensuring correct image matches each node.
+**Flash all 4 nodes with their respective images.**
 
 ---
 
-### Step 2: Boot Nodes
+### Step 2: Boot Raspberry Pis
 
-1. Insert SD cards into Raspberry Pis
-2. Connect all nodes to network switch
-3. Connect switch to router
-4. Power on all nodes
-5. Wait 2-3 minutes for boot
+1. Insert SD cards into respective Pis
+2. Connect Ethernet cables
+3. Connect power supplies
+4. Wait 2-3 minutes for boot
 
-#### 2.1 Verify Node Discovery
+#### 2.1 Verify Connectivity
 
 ```bash
-# Scan for Talos nodes
-nmap -p 50000 192.168.99.0/24 | grep -B 4 "50000/tcp open"
+# Test each node
+ping -c 3 192.168.99.101
+ping -c 3 192.168.99.102
+ping -c 3 192.168.99.103
+ping -c 3 192.168.99.111
 
-# Or test specific IPs
-for ip in 192.168.99.{101..103} 192.168.99.111; do
-  echo -n "$ip: "
-  nc -zv $ip 50000 2>&1 | grep succeeded && echo "✓ Ready"
-done
+# Check Talos API
+talosctl --nodes 192.168.99.101 version --insecure
 ```
-
-**Expected output:**
-```
-192.168.99.101: ✓ Ready
-192.168.99.102: ✓ Ready
-192.168.99.103: ✓ Ready
-192.168.99.111: ✓ Ready
-```
-
-**If nodes don't appear:**
-- Check power connections
-- Verify network connectivity
-- Ensure SD cards were flashed correctly
-- Check router DHCP logs (nodes shouldn't need DHCP)
-- Wait longer (first boot can take 3-5 minutes)
 
 ---
 
-### Step 3: Generate Talos Configurations
-
-#### 3.1 Run Generation Script
+### Step 3: Generate Cluster Configuration
 
 ```bash
-cd scripts
-chmod +x generate-configs.sh
-./generate-configs.sh
+# Generate secrets and configs
+./scripts/generate-configs.sh
+
+# This creates:
+# - talos/secrets.yaml (cluster secrets)
+# - talos/talosconfig (API credentials)
+# - talos/controlplane/*.yaml (node configs)
+# - talos/worker/*.yaml (node configs)
 ```
 
-This creates:
-- `talos/secrets.yaml` - Cluster secrets (⚠️ **KEEP SAFE**)
-- `talos/talosconfig` - Talos API credentials
-- `talos/controlplane/*.yaml` - Node configurations
-- `talos/worker/*.yaml` - Worker configurations
-
-#### 3.2 Backup Secrets
-
-**CRITICAL:** Store secrets securely before proceeding:
-
-```bash
-# Option 1: Offline backup
-cp talos/secrets.yaml ~/secure-backup/talos-secrets-$(date +%Y%m%d).yaml
-
-# Option 2: Encrypted backup (recommended for Git)
-# Install SOPS: https://github.com/mozilla/sops
-sops --encrypt talos/secrets.yaml > talos/secrets.enc.yaml
-git add talos/secrets.enc.yaml
-
-# Option 3: Password manager
-# Store secrets.yaml in 1Password/Bitwarden/etc
-```
-
-**Without `secrets.yaml`, you cannot:**
-- Add new nodes to cluster
-- Recover from complete cluster failure
-- Generate new configurations
+**Important**: `secrets.yaml` and `talosconfig` are gitignored. Back them up securely!
 
 ---
 
 ### Step 4: Apply Configurations
 
-#### 4.1 Apply to All Nodes
-
-**CRITICAL SEQUENCE:** Apply configs to ALL nodes BEFORE bootstrapping.
-
 ```bash
-cd scripts
-chmod +x apply-configs.sh
-./apply-configs.sh
+# Apply to all nodes
+./scripts/apply-configs.sh
+
+# Or manually:
+talosctl apply-config --nodes 192.168.99.101 --file talos/controlplane/controlplane-01.yaml --insecure
+talosctl apply-config --nodes 192.168.99.102 --file talos/controlplane/controlplane-02.yaml --insecure
+talosctl apply-config --nodes 192.168.99.103 --file talos/controlplane/controlplane-03.yaml --insecure
+talosctl apply-config --nodes 192.168.99.111 --file talos/worker/worker-01.yaml --insecure
 ```
 
-The script applies configurations in order:
-1. controlplane-01 → wait 30s
-2. controlplane-02 → wait 30s
-3. controlplane-03 → wait 30s
-4. worker-01 → done
-
-**Manual application (if script fails):**
-```bash
-export TALOSCONFIG="./talos/talosconfig"
-
-talosctl apply-config \
-  --nodes 192.168.99.101 \
-  --file talos/controlplane/controlplane-01.yaml \
-  --insecure
-
-# Wait for node to process config
-sleep 30
-
-# Repeat for other nodes...
-```
-
-#### 4.2 Verify Configuration Applied
-
-```bash
-# Check node status
-talosctl --nodes 192.168.99.101 version --insecure
-
-# Should show Talos version, NOT "maintenance mode"
-```
-
-**If nodes stay in maintenance mode:**
-- Configs weren't applied correctly
-- Re-run apply-configs.sh
-- Check network connectivity
-- See [Troubleshooting](#troubleshooting) section
+**Nodes will reboot after applying configs.**
 
 ---
 
@@ -388,9 +343,8 @@ talosctl --nodes 192.168.99.101 version --insecure
 #### 5.1 Bootstrap First Control Plane
 
 ```bash
-cd scripts
-chmod +x bootstrap.sh
-./bootstrap.sh
+# Run bootstrap script
+./scripts/bootstrap.sh
 ```
 
 **What happens:**
@@ -400,10 +354,26 @@ chmod +x bootstrap.sh
 4. Worker node joins automatically
 5. VIP becomes active (192.168.99.100)
 6. Retrieves kubeconfig
+7. **Prompts for application credentials** (see below)
 
 **This takes 5-10 minutes on Raspberry Pi.**
 
-#### 5.2 Monitor Bootstrap Progress
+#### 5.2 Application Credential Setup
+
+During bootstrap, the script will prompt you to set up credentials for applications that will be deployed via FluxCD:
+
+**AdGuardHome (DNS Server):**
+- Username (default: admin)
+- Password (with confirmation)
+- Used to access AdGuardHome web interface
+
+**Vaultwarden (Password Manager):**
+- Admin token (can be auto-generated)
+- Used to access Vaultwarden admin panel
+
+These credentials are stored as Kubernetes secrets and referenced by the application deployments managed by Flux.
+
+#### 5.3 Monitor Bootstrap Progress
 
 ```bash
 # Watch bootstrap logs
@@ -416,7 +386,7 @@ talosctl --nodes 192.168.99.101 health
 talosctl --nodes 192.168.99.101 etcdctl member list
 ```
 
-#### 5.3 Verify Cluster
+#### 5.4 Verify Cluster
 
 ```bash
 # Set kubeconfig
@@ -437,10 +407,6 @@ kubectl get pods -A
 
 # All kube-system pods should be Running
 ```
-
-**If bootstrap fails:**
-- Check [Troubleshooting: Bootstrap Failures](#bootstrap-failures)
-- Review logs: `talosctl --nodes 192.168.99.101 logs kubelet`
 
 ---
 
@@ -471,6 +437,11 @@ kubectl apply -f kubernetes/infrastructure/metallb/
 kubectl get ipaddresspool -n metallb-system
 kubectl get l2advertisement -n metallb-system
 ```
+
+MetalLB is configured with:
+- **IP Pool**: `192.168.99.120-192.168.99.140` (21 addresses)
+- **Mode**: Layer 2
+- **Auto-assign**: Enabled
 
 #### 6.3 Test MetalLB
 
@@ -539,23 +510,21 @@ kubectl get pods -n flux-system
 # All flux-system pods should be Running
 ```
 
-#### 7.4 Configure Flux Structure
+#### 7.4 Verify Traefik Deployment
 
-Flux watches `kubernetes/` directory for changes. Commit infrastructure and apps:
+Flux will automatically deploy Traefik from the repository:
 
 ```bash
-# Add infrastructure kustomization
-git add kubernetes/flux/flux-system/infrastructure.yaml
-git add kubernetes/infrastructure/
+# Check Traefik namespace
+kubectl get ns traefik
 
-# Commit and push
-git commit -m "Add infrastructure configuration"
-git push origin main
+# Check Traefik pods
+kubectl get pods -n traefik
 
-# Watch Flux deploy
-flux get kustomizations --watch
+# Check Traefik service (should have LoadBalancer IP)
+kubectl get svc -n traefik
 
-# Should show 'infrastructure' reconciling
+# Expected output shows EXTERNAL-IP: 192.168.99.120
 ```
 
 ---
@@ -582,6 +551,15 @@ talosctl --nodes 192.168.99.100 etcdctl endpoint health
 ping -c 3 192.168.99.100
 ```
 
+### Access Traefik Dashboard
+
+```bash
+# Port-forward to access dashboard
+kubectl port-forward -n traefik $(kubectl get pods -n traefik -l app.kubernetes.io/name=traefik -o name | head -1) 9000:9000
+
+# Open browser to http://localhost:9000/dashboard/
+```
+
 ### Update kubeconfig Context
 
 ```bash
@@ -592,363 +570,89 @@ kubectl config rename-context admin@talos-cluster prod-rpi-cluster
 kubectl config use-context prod-rpi-cluster
 ```
 
-### Configure Monitoring (Recommended)
-
-```bash
-# Add Prometheus Operator
-# See kubernetes/apps/monitoring/ for examples
-
-# Access Grafana
-kubectl port-forward -n monitoring svc/grafana 3000:80
-# Open http://localhost:3000
-```
-
-### Set Up Ingress Controller (Optional)
-
-```bash
-# Deploy NGINX Ingress
-kubectl apply -f kubernetes/infrastructure/ingress-nginx/
-
-# Verify LoadBalancer IP assigned
-kubectl get svc -n ingress-nginx
-```
-
 ---
 
 ## Troubleshooting
 
-### Node Discovery Issues
+### Common Issues
 
-**Problem:** Nodes don't appear on network after boot
+#### Node Discovery Issues
 
-**Diagnosis:**
-```bash
-# Check if Talos API is responding
-nc -zv 192.168.99.101 50000
+**Problem**: Nodes don't appear on network after boot
 
-# Scan entire subnet
-nmap -p 50000 192.168.99.0/24
-```
+**Solutions**:
+1. Verify power supply (3A+ recommended)
+2. Re-flash SD card with new image
+3. Check Ethernet cable and switch port
+4. Scan network: `nmap -p 50000 192.168.99.0/24`
 
-**Solutions:**
-1. **Power issues**: Verify stable 2.5A+ power supply
-2. **SD card problems**: Re-flash with new SD card
-3. **Network issues**: Test cable, switch port
-4. **Wrong network**: Verify router configuration
-5. **First boot delay**: Wait 5 minutes, try again
+#### Bootstrap Failures
 
----
+**Problem**: Bootstrap hangs or fails
 
-### Configuration Not Applying
+**Solutions**:
+1. Check etcd health: `talosctl --nodes 192.168.99.101 etcdctl endpoint health --cluster`
+2. Verify VIP configuration in machine configs
+3. Review logs: `talosctl --nodes 192.168.99.101 logs kubelet`
+4. Increase timeout and retry
 
-**Problem:** `apply-config` succeeds but nodes stay in maintenance mode
+#### MetalLB Not Assigning IPs
 
-**Diagnosis:**
-```bash
-# Check node status
-talosctl --nodes 192.168.99.101 version --insecure
+**Problem**: LoadBalancer services stuck with `<pending>` EXTERNAL-IP
 
-# Check disk
-talosctl --nodes 192.168.99.101 disks --insecure
+**Solutions**:
+1. Check MetalLB pods: `kubectl get pods -n metallb-system`
+2. Verify IP pool doesn't conflict with DHCP
+3. Check logs: `kubectl logs -n metallb-system -l component=controller`
+4. Verify interface in L2Advertisement matches node interface (eth0)
 
-# Check logs
-talosctl --nodes 192.168.99.101 logs installer --insecure
-```
+#### Flux Not Reconciling
 
-**Solutions:**
-1. **Wrong disk path**: Update install disk in config
-   ```bash
-   # Check available disks
-   talosctl --nodes 192.168.99.101 disks --insecure
-   # Update machine.install.disk in config
-   ```
+**Problem**: Changes in Git not reflected in cluster
 
-2. **Config validation error**: Check config syntax
-   ```bash
-   talosctl validate --config talos/controlplane/controlplane-01.yaml --mode metal
-   ```
+**Solutions**:
+1. Check Flux health: `flux check`
+2. Force reconcile: `flux reconcile source git flux-system`
+3. Check events: `flux events`
+4. Verify GitHub token is valid
 
-3. **Network mismatch**: Verify gateway, IP addresses
-4. **Apply before bootstrap**: Never bootstrap before applying configs
+#### Traefik Issues
 
----
+**Problem**: Ingress not routing traffic
 
-### Bootstrap Failures
-
-**Problem:** Bootstrap command fails or times out
-
-**Diagnosis:**
-```bash
-# Check control plane logs
-talosctl --nodes 192.168.99.101 logs kubelet
-
-# Check etcd
-talosctl --nodes 192.168.99.101 service etcd status
-
-# Check API server
-talosctl --nodes 192.168.99.101 service kube-apiserver status
-```
-
-**Solutions:**
-
-1. **etcd not starting**:
-   ```bash
-   # Check etcd logs
-   talosctl --nodes 192.168.99.101 logs etcd
-   
-   # Common issue: clock skew
-   talosctl --nodes 192.168.99.101 time
-   ```
-
-2. **Insufficient resources**: Verify 4GB+ RAM per Pi
-
-3. **Network issues**: Ensure Layer 2 connectivity
-   ```bash
-   # Test from one node to another
-   talosctl --nodes 192.168.99.101 get addresses
-   ```
-
-4. **Corrupted state**: Reset and retry
-   ```bash
-   # Reset node (WARNING: deletes all data)
-   talosctl reset --nodes 192.168.99.101 --graceful=false --reboot
-   
-   # Re-apply config and bootstrap
-   ```
-
----
-
-### VIP Not Responding
-
-**Problem:** Can't reach 192.168.99.100 after bootstrap
-
-**Diagnosis:**
-```bash
-# Check etcd health (VIP requires healthy etcd)
-talosctl --nodes 192.168.99.101 service etcd status
-
-# Check VIP on interfaces
-talosctl --nodes 192.168.99.101,192.168.99.102,192.168.99.103 get addresses | grep 192.168.99.100
-
-# Check etcd members
-talosctl --nodes 192.168.99.101 etcdctl member list
-```
-
-**Solutions:**
-
-1. **etcd not healthy**: Wait for etcd to stabilize
-   ```bash
-   # Monitor etcd
-   talosctl --nodes 192.168.99.101 etcdctl endpoint health --cluster
-   ```
-
-2. **VIP not configured**: Verify VIP in machine configs
-   ```yaml
-   machine:
-     network:
-       interfaces:
-         - deviceSelector:
-             physical: true
-           vip:
-             ip: 192.168.99.100
-   ```
-
-3. **Wrong subnet**: VIP must be in same subnet as nodes
-
-4. **ARP issues**: Check switch configuration, disable port security
-
----
-
-### MetalLB Not Assigning IPs
-
-**Problem:** LoadBalancer services stuck with `<pending>` EXTERNAL-IP
-
-**Diagnosis:**
-```bash
-# Check MetalLB pods
-kubectl get pods -n metallb-system
-
-# Check logs
-kubectl logs -n metallb-system -l app=metallb -l component=controller
-kubectl logs -n metallb-system -l app=metallb -l component=speaker
-
-# Check configuration
-kubectl get ipaddresspool -n metallb-system -o yaml
-kubectl get l2advertisement -n metallb-system -o yaml
-
-# Check service events
-kubectl describe svc <service-name>
-```
-
-**Solutions:**
-
-1. **IP pool conflicts with DHCP**:
-   - Reserve IPs in router
-   - Update IP pool range
-
-2. **Interface mismatch**:
-   ```yaml
-   # Update l2-advertisement.yaml
-   spec:
-     interfaces:
-       - eth0  # Verify this matches your Pi's interface
-   ```
-
-3. **MetalLB pods not running**:
-   ```bash
-   # Reinstall MetalLB
-   kubectl delete namespace metallb-system
-   kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
-   ```
-
-4. **Strict ARP mode required**:
-   ```bash
-   # Check kube-proxy config (Talos enables by default)
-   talosctl --nodes 192.168.99.100 get kubeproxyconfigs -o yaml
-   ```
-
----
-
-### Flux Not Reconciling
-
-**Problem:** Changes in Git not reflected in cluster
-
-**Diagnosis:**
-```bash
-# Check Flux health
-flux check
-
-# Check reconciliation
-flux get sources git
-flux get kustomizations
-
-# Check logs
-kubectl logs -n flux-system -l app=source-controller
-kubectl logs -n flux-system -l app=kustomize-controller
-
-# Check events
-flux events
-```
-
-**Solutions:**
-
-1. **Git authentication failed**:
-   ```bash
-   # Verify GitHub token
-   kubectl get secret -n flux-system flux-system -o yaml
-   
-   # Re-bootstrap with new token
-   flux bootstrap github --force ...
-   ```
-
-2. **Invalid manifests**:
-   ```bash
-   # Force reconcile to see errors
-   flux reconcile source git flux-system
-   flux reconcile kustomization flux-system
-   ```
-
-3. **Dependency issues**: Check kustomization dependencies
-   ```yaml
-   # Ensure proper order
-   dependsOn:
-     - name: infrastructure
-   ```
-
-4. **Suspended reconciliation**:
-   ```bash
-   # Check if suspended
-   flux get kustomizations
-   
-   # Resume
-   flux resume kustomization <name>
-   ```
-
----
-
-### Node Not Joining Cluster
-
-**Problem:** Node appears in Talos but not in `kubectl get nodes`
-
-**Diagnosis:**
-```bash
-# Check kubelet status
-talosctl --nodes <IP> service kubelet status
-
-# Check kubelet logs
-talosctl --nodes <IP> logs kubelet
-
-# Check node conditions
-kubectl describe node <node-name>
-```
-
-**Solutions:**
-
-1. **Certificate issues**: Check time synchronization
-   ```bash
-   talosctl --nodes <IP> time
-   ```
-
-2. **Network policy blocking**: Check CNI
-   ```bash
-   kubectl get pods -n kube-system | grep flannel
-   ```
-
-3. **Kubelet not running**:
-   ```bash
-   talosctl --nodes <IP> service kubelet restart
-   ```
-
----
+**Solutions**:
+1. Check Traefik pods: `kubectl get pods -n traefik`
+2. View logs: `kubectl logs -n traefik -l app.kubernetes.io/name=traefik`
+3. Verify DNS/hosts file points to MetalLB IP (192.168.99.120)
+4. Check Ingress resource: `kubectl get ingress -A`
 
 ### Disk Space Issues
 
-**Problem:** SD card fills up
+**Problem**: SD card running out of space
 
-**Diagnosis:**
+**Solutions**:
 ```bash
 # Check disk usage
-talosctl --nodes 192.168.99.101 df
+talosctl --nodes 192.168.99.100 df
 
-# Check large directories
-talosctl --nodes 192.168.99.101 du /system
+# Cleanup options:
+# 1. Talos automatically rotates logs
+# 2. Clean up old container images (Talos handles this)
+# 3. Use larger SD card (64GB+ recommended)
 ```
-
-**Solutions:**
-
-1. **Clean container images**:
-   ```bash
-   # Talos auto-cleans, but can force
-   talosctl --nodes 192.168.99.101 service containerd restart
-   ```
-
-2. **Rotate logs**: Talos automatically rotates
-3. **Use larger SD card**: Reflash with 64GB+ card
-
----
 
 ### Complete Cluster Reset
 
 **When all else fails:**
 
 ```bash
-# 1. Reset all nodes (WARNING: DESTROYS ALL DATA)
+# WARNING: DESTROYS ALL DATA
 for ip in 192.168.99.{101..103} 192.168.99.111; do
   talosctl reset --nodes $ip --graceful=false --reboot
 done
 
-# 2. Wait for maintenance mode (3-5 minutes)
-
-# 3. Re-apply configurations
-./scripts/apply-configs.sh
-
-# 4. Bootstrap
-./scripts/bootstrap.sh
-
-# 5. Reinstall MetalLB and Flux
-kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
-kubectl apply -f kubernetes/infrastructure/metallb/
-flux bootstrap github ...
+# Wait for maintenance mode (3-5 minutes)
+# Then re-run deployment from Step 4
 ```
 
 ---
@@ -962,7 +666,6 @@ flux bootstrap github ...
 talosctl --nodes 192.168.99.100 version
 
 # Upgrade nodes one at a time
-# Get new schematic from factory.talos.dev with new version
 talosctl --nodes 192.168.99.101 upgrade \
   --image factory.talos.dev/installer/<schematic-id>:v1.11.6 \
   --preserve
@@ -983,7 +686,7 @@ talosctl --nodes 192.168.99.100 upgrade-k8s --dry-run
 talosctl --nodes 192.168.99.100 upgrade-k8s --to 1.32.0
 ```
 
-### Adding New Nodes
+### Adding New Worker Nodes
 
 ```bash
 # 1. Generate schematic with static IP at factory.talos.dev
@@ -1006,13 +709,6 @@ talosctl --nodes 192.168.99.101 etcd snapshot /var/lib/etcd/snapshot.db
 talosctl --nodes 192.168.99.101 copy /var/lib/etcd/snapshot.db ./etcd-backup-$(date +%Y%m%d).db
 ```
 
-### Restore etcd
-
-```bash
-# Restore snapshot (only if disaster recovery needed)
-talosctl --nodes 192.168.99.101 etcd snapshot /path/to/snapshot.db --restore
-```
-
 ### Update Node Configuration
 
 ```bash
@@ -1026,32 +722,71 @@ vim talos/controlplane/controlplane-01-patch.yaml
 talosctl apply-config --nodes 192.168.99.101 --file talos/controlplane/controlplane-01.yaml
 ```
 
+### Managing Applications with Flux
+
+```bash
+# Deploy new application
+# 1. Add manifests to kubernetes/apps/<app-name>/
+# 2. Commit and push to Git
+# 3. Flux automatically deploys
+
+# Force reconciliation
+flux reconcile kustomization <name>
+
+# Suspend/resume reconciliation
+flux suspend kustomization <name>
+flux resume kustomization <name>
+```
+
 ---
 
 ## Repository Structure
 
 ```
+.
 ├── scripts/                     # Automation scripts
-│   ├── download-talos-images.sh # Download node images
-│   ├── generate-configs.sh      # Generate Talos configs
+│   ├── download-talos-images.sh # Download node images from factory
+│   ├── generate-configs.sh      # Generate Talos configurations
 │   ├── apply-configs.sh         # Apply configs to nodes
 │   └── bootstrap.sh             # Bootstrap cluster
 │
 ├── talos/                       # Talos configuration
 │   ├── secrets.yaml             # Cluster secrets (gitignored)
 │   ├── talosconfig              # Talos API config (gitignored)
-│   ├── controlplane/            # Control plane configs
-│   └── worker/                  # Worker configs
+│   ├── controlplane.yaml        # Base control plane config
+│   ├── worker.yaml              # Base worker config
+│   ├── controlplane/            # Control plane node configs
+│   │   ├── *-patch.yaml         # Node-specific patches (committed)
+│   │   └── *.yaml               # Generated configs (gitignored)
+│   └── worker/                  # Worker node configs
+│       ├── *-patch.yaml         # Node-specific patches (committed)
+│       └── *.yaml               # Generated configs (gitignored)
 │
 ├── kubernetes/                  # Kubernetes manifests
-│   ├── flux/                    # Flux system configs
-│   ├── infrastructure/          # Core services (MetalLB, etc)
+│   ├── flux/                    # Flux GitOps configuration
+│   │   └── flux-system/         # Flux system components
+│   ├── infrastructure/          # Core infrastructure services
+│   │   ├── metallb/             # MetalLB load balancer configs
+│   │   │   ├── namespace.yaml
+│   │   │   ├── ip-pool.yaml     # IP address pool (192.168.99.120-140)
+│   │   │   └── l2-advertisement.yaml
+│   │   └── traefik/             # Traefik ingress controller
+│   │       ├── namespace.yaml
+│   │       ├── helm-repository.yaml
+│   │       └── helm-release.yaml
 │   └── apps/                    # Application deployments
+│       └── (your apps here)
 │
-└── docs/                        # Documentation
+├── .gitignore                   # Git ignore rules
+└── README.md                    # This file
 ```
 
-**See [Repository Structure](docs/repository-structure.md) for details.**
+### Key Files
+
+- **talos/secrets.yaml**: Cluster certificates and tokens (sensitive, gitignored)
+- **talos/talosconfig**: Talos API credentials (sensitive, gitignored)
+- **kubeconfig**: Kubernetes API credentials (sensitive, gitignored)
+- **kubernetes/flux/flux-system/**: Flux configuration (auto-generated by Flux)
 
 ---
 
@@ -1093,7 +828,11 @@ flux reconcile source git flux-system --with-source
 
 ## Support
 
-- **Documentation**: [Talos Docs](https://www.talos.dev/) | [Flux Docs](https://fluxcd.io/)
+- **Documentation**: 
+  - [Talos Docs](https://www.talos.dev/)
+  - [Flux Docs](https://fluxcd.io/)
+  - [MetalLB Docs](https://metallb.universe.tf/)
+  - [Traefik Docs](https://doc.traefik.io/traefik/)
 - **Community**: 
   - [Talos Discussions](https://github.com/siderolabs/talos/discussions)
   - [Flux Slack](https://cloud-native.slack.com/)
