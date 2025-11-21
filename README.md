@@ -560,6 +560,39 @@ kubectl port-forward -n traefik $(kubectl get pods -n traefik -l app.kubernetes.
 # Open browser to http://localhost:9000/dashboard/
 ```
 
+### Retrieve Application Credentials
+
+#### Vaultwarden Admin Token
+
+If you need to retrieve your Vaultwarden admin token (set during bootstrap):
+
+```bash
+# Retrieve the admin token
+kubectl get secret vaultwarden-admin-token -n vaultwarden -o jsonpath='{.data.admin-token}' | base64 -d
+echo  # Add newline for readability
+
+# Or view the entire secret
+kubectl get secret vaultwarden-admin-token -n vaultwarden -o yaml
+```
+
+The admin token is used to access the Vaultwarden admin panel at `/admin` (e.g., `https://vaultwarden.yourdomain.com/admin`).
+
+#### AdGuardHome Credentials
+
+To retrieve your AdGuardHome username and password hash:
+
+```bash
+# Retrieve username
+kubectl get secret adguardhome-password -n adguardhome -o jsonpath='{.data.username}' | base64 -d
+echo
+
+# Retrieve password hash (bcrypt)
+kubectl get secret adguardhome-password -n adguardhome -o jsonpath='{.data.password-hash}' | base64 -d
+echo
+```
+
+**Note**: The password is stored as a bcrypt hash and cannot be reversed. If you forget your password, you'll need to generate a new one and update the secret.
+
 ### Update kubeconfig Context
 
 ```bash
