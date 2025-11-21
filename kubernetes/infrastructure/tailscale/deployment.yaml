@@ -16,10 +16,30 @@ spec:
         app: tailscale-router
     spec:
       serviceAccountName: tailscale
+      initContainers:
+      - name: init-sysctl
+        image: busybox:latest
+        securityContext:
+          privileged: true
+        command:
+        - sh
+        - -c
+        - |
+          echo "Enabling IP forwarding..."
+          echo 1 > /proc/sys/net/ipv4/ip_forward
+          echo 1 > /proc/sys/net/ipv6/conf/all/forwarding
+        volumeMounts:
+        - name: proc-sys
+          mountPath: /proc/sys
       containers:
       - name: tailscale
         image: tailscale/tailscale:latest
         imagePullPolicy: Always
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+            - SYS_MODULE
         env:
         - name: TS_AUTHKEY
           valueFrom:
@@ -30,8 +50,9 @@ spec:
           value: "192.168.99.0/24"
         - name: TS_STATE_DIR
           value: /var/lib/tailscale
+        # Change this from "true" to "false" for proper exit node support
         - name: TS_USERSPACE
-          value: "true"
+          value: "false"
         - name: TS_HOSTNAME
           value: "k8s-subnet-router"
         - name: TS_EXTRA_ARGS
@@ -39,6 +60,8 @@ spec:
         volumeMounts:
         - name: state
           mountPath: /var/lib/tailscale
+        - name: dev-net-tun
+          mountPath: /dev/net/tun
         resources:
           requests:
             cpu: 50m
@@ -49,3 +72,10 @@ spec:
       volumes:
       - name: state
         emptyDir: {}
+      - name: dev-net-tun
+        hostPath:
+          path: /dev/net/tun
+          type: CharDevice
+      - name: proc-sys
+        hostPath:
+          path: /proc/sys
