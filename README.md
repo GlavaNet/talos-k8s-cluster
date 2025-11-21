@@ -199,12 +199,7 @@ export GITHUB_REPO=your-repo-name
 # 7. Bootstrap cluster (will prompt for AdGuardHome & Vaultwarden credentials)
 ./scripts/bootstrap.sh
 
-# 8. Install MetalLB
-kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
-kubectl wait --namespace metallb-system --for=condition=ready pod --selector=app=metallb --timeout=90s
-kubectl apply -f kubernetes/infrastructure/metallb/
-
-# 9. Bootstrap FluxCD
+# 8. Bootstrap FluxCD (MetalLB will be deployed automatically by Flux)
 flux bootstrap github \
   --owner=${GITHUB_USER} \
   --repository=${GITHUB_REPO} \
@@ -213,7 +208,7 @@ flux bootstrap github \
   --personal \
   --token-string=${GITHUB_TOKEN}
 
-# 10. Verify deployment
+# 9. Verify deployment
 kubectl get nodes
 kubectl get pods -A
 flux get kustomizations
@@ -410,40 +405,51 @@ kubectl get pods -A
 
 ---
 
-### Step 6: Install MetalLB
+### Step 6: MetalLB Deployment
 
-MetalLB provides LoadBalancer service type for bare metal clusters.
+MetalLB provides LoadBalancer service type for bare metal clusters. It is deployed automatically by FluxCD via Helm chart.
 
-#### 6.1 Install MetalLB Components
+#### 6.1 Configuration Overview
 
-```bash
-# Install MetalLB
-kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
+MetalLB is deployed via Flux HelmRelease with the following configuration:
+- **Version**: v0.14.9
+- **IP Pool**: `192.168.99.120-192.168.99.140` (21 addresses)
+- **Mode**: Layer 2
+- **Auto-assign**: Enabled
+- **Management**: Flux GitOps with Helm
 
-# Wait for pods
-kubectl wait --namespace metallb-system \
-  --for=condition=ready pod \
-  --selector=app=metallb \
-  --timeout=90s
+The configuration is located in `kubernetes/infrastructure/metallb/`:
+```
+metallb/
+├── namespace.yaml           # Namespace with pod security labels
+├── helm-repository.yaml     # MetalLB Helm repository
+├── helm-release.yaml        # HelmRelease with configuration
+├── ip-pool.yaml            # IPAddressPool CRD
+├── l2-advertisement.yaml   # L2Advertisement CRD
+└── kustomization.yaml      # Kustomize configuration
 ```
 
-#### 6.2 Configure IP Address Pool
+#### 6.2 Verify MetalLB Deployment
+
+After Flux bootstrap (Step 7), MetalLB will be automatically deployed:
 
 ```bash
-# Apply MetalLB configuration
-kubectl apply -f kubernetes/infrastructure/metallb/
+# Check HelmRelease status
+kubectl get helmrelease metallb -n metallb-system
 
-# Verify
+# Should show: READY=True
+
+# Check MetalLB pods
+kubectl get pods -n metallb-system
+
+# Should show controller and speaker pods Running
+
+# Verify IP pool configuration
 kubectl get ipaddresspool -n metallb-system
 kubectl get l2advertisement -n metallb-system
 ```
 
-MetalLB is configured with:
-- **IP Pool**: `192.168.99.120-192.168.99.140` (21 addresses)
-- **Mode**: Layer 2
-- **Auto-assign**: Enabled
-
-#### 6.3 Test MetalLB
+#### 6.3 Test MetalLB (After Flux Bootstrap)
 
 ```bash
 # Create test service
@@ -463,6 +469,8 @@ curl http://${NGINX_IP}
 kubectl delete svc nginx
 kubectl delete deployment nginx
 ```
+
+**Note**: This step happens automatically after Flux bootstrap. You don't need to manually install MetalLB.
 
 ---
 
@@ -634,10 +642,13 @@ kubectl config use-context prod-rpi-cluster
 **Problem**: LoadBalancer services stuck with `<pending>` EXTERNAL-IP
 
 **Solutions**:
-1. Check MetalLB pods: `kubectl get pods -n metallb-system`
-2. Verify IP pool doesn't conflict with DHCP
-3. Check logs: `kubectl logs -n metallb-system -l component=controller`
-4. Verify interface in L2Advertisement matches node interface (eth0)
+1. Check HelmRelease status: `kubectl get helmrelease metallb -n metallb-system`
+2. Check MetalLB pods: `kubectl get pods -n metallb-system`
+3. View controller logs: `kubectl logs -n metallb-system -l component=controller`
+4. Verify IP pool: `kubectl get ipaddresspool -n metallb-system -o yaml`
+5. Check L2 advertisement: `kubectl get l2advertisement -n metallb-system -o yaml`
+6. Verify interface matches nodes (end0 for Raspberry Pi)
+7. Force Flux reconciliation: `flux reconcile helmrelease metallb -n metallb-system`
 
 #### Flux Not Reconciling
 
@@ -717,6 +728,53 @@ talosctl --nodes 192.168.99.100 upgrade-k8s --dry-run
 
 # Upgrade (updates all control planes and workers)
 talosctl --nodes 192.168.99.100 upgrade-k8s --to 1.32.0
+```
+
+### Upgrading Helm-Managed Infrastructure
+
+Infrastructure components like MetalLB and Traefik are managed by Flux HelmReleases. To upgrade:
+
+#### MetalLB
+
+```bash
+# Edit the HelmRelease version
+vim kubernetes/infrastructure/metallb/helm-release.yaml
+
+# Change version line:
+# version: "0.14.9"  # Old
+# to:
+# version: "0.14.10" # New
+
+# Commit and push
+git add kubernetes/infrastructure/metallb/helm-release.yaml
+git commit -m "chore: upgrade MetalLB to v0.14.10"
+git push origin main
+
+# Flux automatically applies the upgrade
+# Watch progress:
+kubectl get helmrelease metallb -n metallb-system --watch
+flux get helmrelease metallb -n metallb-system
+```
+
+#### Traefik
+
+```bash
+# Similar process for Traefik
+vim kubernetes/infrastructure/traefik/helm-release.yaml
+
+# Update version and commit
+git commit -am "chore: upgrade Traefik to v3.2"
+git push
+
+# Flux handles the upgrade
+```
+
+#### Force Immediate Reconciliation
+
+```bash
+# If you don't want to wait for Flux's interval
+flux reconcile source git flux-system
+flux reconcile helmrelease metallb -n metallb-system
 ```
 
 ### Adding New Worker Nodes
@@ -799,11 +857,14 @@ flux resume kustomization <name>
 │   ├── flux/                    # Flux GitOps configuration
 │   │   └── flux-system/         # Flux system components
 │   ├── infrastructure/          # Core infrastructure services
-│   │   ├── metallb/             # MetalLB load balancer configs
+│   │   ├── metallb/             # MetalLB load balancer (Helm)
 │   │   │   ├── namespace.yaml
-│   │   │   ├── ip-pool.yaml     # IP address pool (192.168.99.120-140)
-│   │   │   └── l2-advertisement.yaml
-│   │   └── traefik/             # Traefik ingress controller
+│   │   │   ├── helm-repository.yaml  # MetalLB Helm repo
+│   │   │   ├── helm-release.yaml     # HelmRelease configuration
+│   │   │   ├── ip-pool.yaml          # IP address pool (192.168.99.120-140)
+│   │   │   ├── l2-advertisement.yaml # Layer 2 advertisement
+│   │   │   └── kustomization.yaml
+│   │   └── traefik/             # Traefik ingress controller (Helm)
 │   │       ├── namespace.yaml
 │   │       ├── helm-repository.yaml
 │   │       └── helm-release.yaml
