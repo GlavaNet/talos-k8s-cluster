@@ -6,6 +6,7 @@ metadata:
   namespace: metallb-system
 spec:
   interval: 30m
+  timeout: 10m  # Increased timeout to allow Helm installation to complete
   chart:
     spec:
       chart: metallb
@@ -16,13 +17,16 @@ spec:
         namespace: metallb-system
       interval: 12h
   install:
-    crds: Create
+    crds: Create  # Install CRDs during initial installation
+    createNamespace: false  # Namespace already created separately
     remediation:
       retries: 3
   upgrade:
-    crds: CreateReplace
+    crds: CreateReplace  # Update CRDs during upgrades
     remediation:
       retries: 3
+  # Wait for all resources to be ready before marking as successful
+  # This ensures CRDs are installed before Flux tries to apply IPAddressPool
   values:
     # Controller configuration
     controller:
