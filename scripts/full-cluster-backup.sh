@@ -56,23 +56,97 @@ fi
 
 echo -e "${GREEN}✓ All required tools found${NC}"
 
+# Prompt for secret inclusion
+echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}Secret Handling Configuration${NC}"
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "\n${YELLOW}Include secrets in this backup?${NC}"
+echo -e "${GREEN}Recommended: NO${NC} (store secrets separately for security)"
+echo -e "\nSecrets that would be included:"
+echo -e "  • secrets.yaml (Talos cluster PKI)"
+echo -e "  • talosconfig (Talos API credentials)"
+echo -e "  • flux-secrets.yaml (Git repository access)"
+echo -e "\n${YELLOW}Your choice (yes/no):${NC} "
+read -r INCLUDE_SECRETS
+
+if [ "$INCLUDE_SECRETS" != "yes" ]; then
+    INCLUDE_SECRETS="no"
+    echo -e "${GREEN}✓ Secrets will be EXCLUDED (recommended for security)${NC}"
+    echo -e "${YELLOW}⚠️  Remember: Secrets should be backed up separately!${NC}"
+    echo -e "${YELLOW}   Run: ./scripts/backup-secrets-only.sh${NC}"
+else
+    echo -e "${YELLOW}⚠️  Secrets will be INCLUDED in this backup${NC}"
+    echo -e "${RED}⚠️  CRITICAL: You MUST encrypt this backup archive!${NC}"
+fi
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+
+sleep 2  # Give user time to read
+
 # 1. Backup Talos configuration
 echo -e "\n${BLUE}[1/5]${NC} Backing up Talos configuration..."
 
-# Check for secrets.yaml in root directory
-if [ ! -f "${PROJECT_ROOT}/secrets.yaml" ]; then
-    echo -e "${RED}✗ secrets.yaml not found in root directory!${NC}"
-    echo "  This is critical for cluster recovery"
-    exit 1
+if [ "$INCLUDE_SECRETS" = "yes" ]; then
+    # Include secrets in backup
+    if [ ! -f "${PROJECT_ROOT}/secrets.yaml" ]; then
+        echo -e "${RED}✗ secrets.yaml not found in root directory!${NC}"
+        echo "  This is critical for cluster recovery"
+        exit 1
+    fi
+    
+    cp "${PROJECT_ROOT}/secrets.yaml" "${BACKUP_DIR}/talos/" 2>/dev/null && \
+        echo -e "${GREEN}✓ secrets.yaml${NC}" || \
+        echo -e "${RED}✗ secrets.yaml${NC}"
+    
+    cp "${PROJECT_ROOT}/talos/talosconfig" "${BACKUP_DIR}/talos/" 2>/dev/null && \
+        echo -e "${GREEN}✓ talosconfig${NC}" || \
+        echo -e "${YELLOW}⚠ talosconfig not found${NC}"
+else
+    # Exclude secrets - create reminder file
+    echo -e "${YELLOW}⚠ secrets.yaml EXCLUDED (recommended)${NC}"
+    echo -e "${YELLOW}⚠ talosconfig EXCLUDED (recommended)${NC}"
+    
+    cat > "${BACKUP_DIR}/talos/SECRETS_NOT_INCLUDED.txt" <<'EOFREMINDER'
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️  SECRETS NOT INCLUDED IN THIS BACKUP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This backup was created WITHOUT secrets for security reasons.
+
+REQUIRED FOR FULL RESTORE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. secrets.yaml      - Talos cluster PKI and secrets
+2. talosconfig       - Talos API access credentials
+3. flux-secrets.yaml - Git repository access (optional)
+
+WHERE TO FIND SECRETS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Check your secure vault (select one):
+[ ] 1Password vault "Cluster Secrets"
+[ ] Encrypted USB drive (in safe)
+[ ] S3 bucket: s3://YOUR-COMPANY-cluster-secrets
+[ ] Other secure location: _______________________
+
+BACKUP SECRETS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Run: ./scripts/backup-secrets-only.sh
+
+RESTORE PROCEDURES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+See: docs/DISASTER_RECOVERY_PHILOSOPHY.md
+     docs/SECRET_SEPARATION_ACTION_PLAN.md
+
+ALTERNATIVE RECOVERY:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Without secrets, you can still recover by:
+1. Generating new Talos secrets
+2. Re-bootstrapping Flux with new credentials
+3. Restoring applications from Git
+
+Note: You will LOSE cluster identity and etcd history.
+EOFREMINDER
+    
+    echo -e "${GREEN}✓ Created SECRETS_NOT_INCLUDED.txt reminder${NC}"
 fi
-
-cp "${PROJECT_ROOT}/secrets.yaml" "${BACKUP_DIR}/talos/" 2>/dev/null && \
-    echo -e "${GREEN}✓ secrets.yaml${NC}" || \
-    echo -e "${RED}✗ secrets.yaml${NC}"
-
-cp "${PROJECT_ROOT}/talos/talosconfig" "${BACKUP_DIR}/talos/" 2>/dev/null && \
-    echo -e "${GREEN}✓ talosconfig${NC}" || \
-    echo -e "${YELLOW}⚠ talosconfig not found${NC}"
 
 cp -r "${PROJECT_ROOT}/talos/controlplane/" "${BACKUP_DIR}/talos/" 2>/dev/null && \
     echo -e "${GREEN}✓ controlplane configs${NC}" || \
@@ -161,6 +235,16 @@ if kubectl get namespace flux-system &> /dev/null; then
             echo -e "${GREEN}✓ Flux manifests${NC}" || \
             echo -e "${YELLOW}⚠ Flux manifests${NC}"
     fi
+    
+    # Handle Flux secrets based on user preference
+    if [ "$INCLUDE_SECRETS" = "yes" ]; then
+        kubectl get secrets -n flux-system -o yaml > \
+            "${BACKUP_DIR}/flux/flux-secrets.yaml" 2>/dev/null && \
+            echo -e "${GREEN}✓ Flux secrets${NC}" || \
+            echo -e "${YELLOW}⚠ Flux secrets not found${NC}"
+    else
+        echo -e "${YELLOW}⚠ Flux secrets EXCLUDED (recommended)${NC}"
+    fi
 else
     echo -e "${YELLOW}⚠ Flux not installed${NC}"
 fi
@@ -182,13 +266,21 @@ fi
 
 # Create manifest file
 echo -e "\n${YELLOW}Creating backup manifest...${NC}"
+
+if [ "$INCLUDE_SECRETS" = "yes" ]; then
+    SECRET_STATUS="INCLUDED (⚠️  ENCRYPT THIS ARCHIVE!)"
+else
+    SECRET_STATUS="EXCLUDED (stored separately)"
+fi
+
 cat > "${BACKUP_DIR}/MANIFEST.txt" <<EOF
 ========================================
 Cluster Backup Manifest
 ========================================
 Backup Time: ${TIMESTAMP}
-Cluster Name: talos-cluster
+Cluster: talos-cluster
 Backup Type: Full Cluster Backup
+Secrets: ${SECRET_STATUS}
 
 Control Plane Nodes:
   - 192.168.99.101 (controlplane-01)
@@ -201,8 +293,20 @@ Worker Nodes:
 Contents:
 ========================================
 talos/
-  ├── secrets.yaml        Critical cluster secrets
-  ├── talosconfig         Talos API credentials
+EOF
+
+if [ "$INCLUDE_SECRETS" = "yes" ]; then
+    cat >> "${BACKUP_DIR}/MANIFEST.txt" <<EOF
+  ├── secrets.yaml        ⚠️  Critical cluster secrets (SENSITIVE)
+  ├── talosconfig         ⚠️  Talos API credentials (SENSITIVE)
+EOF
+else
+    cat >> "${BACKUP_DIR}/MANIFEST.txt" <<EOF
+  ├── SECRETS_NOT_INCLUDED.txt  (secrets stored separately)
+EOF
+fi
+
+cat >> "${BACKUP_DIR}/MANIFEST.txt" <<EOF
   ├── controlplane/       Control plane configs
   └── worker/             Worker configs
 
@@ -215,6 +319,78 @@ kubernetes/
   ├── configs.yaml        ConfigMaps and Secrets
   ├── crds.yaml          Custom Resource Definitions
   ├── ingresses.yaml     Ingress resources
+  └── storageclasses.yaml Storage Classes
+
+flux/
+  ├── flux-resources.yaml Flux GitOps resources
+EOF
+
+if [ "$INCLUDE_SECRETS" = "yes" ]; then
+    cat >> "${BACKUP_DIR}/MANIFEST.txt" <<EOF
+  ├── flux-secrets.yaml   ⚠️  Git credentials (SENSITIVE)
+EOF
+fi
+
+cat >> "${BACKUP_DIR}/MANIFEST.txt" <<EOF
+  └── flux/              Flux manifests
+
+kubeconfig               Kubernetes API credentials
+
+Restore Procedure:
+========================================
+EOF
+
+if [ "$INCLUDE_SECRETS" = "yes" ]; then
+    cat >> "${BACKUP_DIR}/MANIFEST.txt" <<EOF
+⚠️  THIS BACKUP CONTAINS SECRETS - HANDLE SECURELY! ⚠️
+
+1. Extract backup archive
+2. Restore Talos cluster using included secrets.yaml
+3. Bootstrap cluster
+4. Restore etcd from snapshot
+5. Apply Kubernetes manifests
+6. Apply Flux secrets and resources
+
+SECURITY NOTICE:
+- This archive contains sensitive secrets
+- Encrypt before uploading to cloud storage
+- Store in secure location with restricted access
+- Delete unencrypted copies after secure storage
+EOF
+else
+    cat >> "${BACKUP_DIR}/MANIFEST.txt" <<EOF
+This backup does NOT contain secrets (recommended for security).
+
+For full restore, you will also need:
+1. secrets.yaml (from secure vault)
+2. talosconfig (from secure vault)
+3. flux-secrets.yaml (from secure vault)
+
+Restore steps:
+1. Retrieve secrets from secure vault
+2. Extract this backup archive
+3. Copy secrets to appropriate locations
+4. Run: ./scripts/restore-cluster.sh
+5. Cluster will restore with original identity
+
+Alternative (without secrets):
+1. Generate new Talos secrets
+2. Build new cluster from scratch
+3. Flux recreates apps from Git
+Note: Loses cluster identity and etcd history
+EOF
+fi
+
+cat >> "${BACKUP_DIR}/MANIFEST.txt" <<EOF
+
+For detailed instructions, see:
+  docs/BACKUP_GUIDE.md
+  docs/DISASTER_RECOVERY_PHILOSOPHY.md
+
+========================================
+Generated by: full-cluster-backup.sh
+========================================
+EOF
   └── storageclasses.yaml Storage Classes
 
 flux/
@@ -294,7 +470,38 @@ echo -e "${GREEN}Backup completed successfully!${NC}"
 echo "========================================="
 echo "Archive: ${BACKUP_ROOT}/${ARCHIVE_NAME}"
 echo "Size: ${ARCHIVE_SIZE}"
-echo "Contents: See ${ARCHIVE_NAME%%.tar.gz}/MANIFEST.txt"
+
+if [ "$INCLUDE_SECRETS" = "yes" ]; then
+    echo -e "Secrets: ${RED}INCLUDED${NC} ⚠️"
+    echo ""
+    echo -e "${RED}⚠️  CRITICAL SECURITY NOTICE:${NC}"
+    echo -e "${YELLOW}This backup contains sensitive secrets!${NC}"
+    echo ""
+    echo "Required actions:"
+    echo "  1. Encrypt this archive immediately"
+    echo "  2. Store in secure location with restricted access"
+    echo "  3. Never upload unencrypted to cloud storage"
+    echo "  4. Delete unencrypted copies after secure storage"
+    echo ""
+    echo "Encrypt command:"
+    echo "  gpg --encrypt --recipient your@email.com \\"
+    echo "    ${BACKUP_ROOT}/${ARCHIVE_NAME}"
+else
+    echo -e "Secrets: ${GREEN}EXCLUDED${NC} ✓ (recommended)"
+    echo ""
+    echo -e "${GREEN}✓ This backup is safe for standard storage${NC}"
+    echo ""
+    echo "Note: For full restore, you'll need secrets from:"
+    echo "  • 1Password vault 'Cluster Secrets' OR"
+    echo "  • Encrypted USB drive OR"
+    echo "  • Separate secure S3 bucket"
+    echo ""
+    echo "Backup secrets separately with:"
+    echo "  ./scripts/backup-secrets-only.sh"
+fi
+
+echo ""
+echo "Details: See MANIFEST.txt in archive"
 echo "========================================="
 
 exit 0

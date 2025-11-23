@@ -24,14 +24,26 @@ Examples:
 
 Restore Process:
   1. Extract backup archive
-  2. Restore Talos secrets and configs
-  3. Optionally restore etcd snapshot
-  4. Optionally restore Kubernetes resources
+  2. Restore Talos secrets (from backup OR secure vault)
+  3. Restore Talos configs
+  4. Optionally restore etcd snapshot
+  5. Optionally restore Kubernetes resources
 
 Prerequisites:
   - New SD cards flashed with Talos
   - All nodes booted and reachable
   - talosctl and kubectl installed
+  - Access to secrets (if not in backup)
+
+Secret Vault Locations:
+  If secrets are not in the backup, you'll need to retrieve them from:
+  • 1Password vault "Cluster Secrets"
+  • Encrypted USB drive
+  • ~/secure-vault/cluster-secrets/
+  • S3 bucket: s3://YOUR-COMPANY-cluster-secrets
+
+Note: Modern backups exclude secrets for security.
+      Script will guide you through retrieval if needed.
 
 EOF
     exit 1
@@ -92,26 +104,101 @@ fi
 # 1. Restore Talos secrets
 echo -e "\n${BLUE}[1/4]${NC} Restoring Talos secrets..."
 
+# Check if secrets are in the backup
+SECRETS_IN_BACKUP=false
 if [ -f "${BACKUP_DIR}/talos/secrets.yaml" ]; then
-    # Copy secrets.yaml to root directory
+    SECRETS_IN_BACKUP=true
+fi
+
+# Check if there's a reminder file indicating secrets were excluded
+if [ -f "${BACKUP_DIR}/talos/SECRETS_NOT_INCLUDED.txt" ]; then
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}⚠️  SECRETS NOT IN BACKUP${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    cat "${BACKUP_DIR}/talos/SECRETS_NOT_INCLUDED.txt"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+fi
+
+if [ "$SECRETS_IN_BACKUP" = true ]; then
+    # Secrets found in backup - restore them
+    echo -e "${GREEN}✓ Secrets found in backup${NC}"
     cp "${BACKUP_DIR}/talos/secrets.yaml" ./
     echo -e "${GREEN}✓ Restored secrets.yaml to root directory${NC}"
+    
+    if [ -f "${BACKUP_DIR}/talos/talosconfig" ]; then
+        mkdir -p talos
+        cp "${BACKUP_DIR}/talos/talosconfig" talos/
+        export TALOSCONFIG="$(pwd)/talos/talosconfig"
+        echo -e "${GREEN}✓ Restored talosconfig to talos/ directory${NC}"
+    fi
 else
-    echo -e "${RED}✗ secrets.yaml not found in backup${NC}"
-    echo "  Cannot proceed without secrets"
-    rm -rf "${TEMP_DIR}"
-    exit 1
+    # Secrets NOT in backup - need to retrieve from vault
+    echo -e "${YELLOW}⚠️  Secrets not found in backup${NC}"
+    echo -e "${YELLOW}You need to retrieve secrets from your secure vault${NC}"
+    echo ""
+    echo "Secret vault locations (check one):"
+    echo "  1. 1Password vault 'Cluster Secrets'"
+    echo "  2. Encrypted USB drive"
+    echo "  3. ~/secure-vault/cluster-secrets/"
+    echo "  4. S3 bucket: s3://YOUR-COMPANY-cluster-secrets"
+    echo ""
+    
+    # Check if secrets exist in local secure vault
+    SECURE_VAULT="${HOME}/secure-vault/cluster-secrets"
+    if [ -f "${SECURE_VAULT}/secrets-latest.yaml" ]; then
+        echo -e "${GREEN}✓ Found secrets in local vault: ${SECURE_VAULT}${NC}"
+        echo -e "\n${YELLOW}Use secrets from local vault? (yes/no)${NC}"
+        read -r USE_LOCAL_VAULT
+        
+        if [ "$USE_LOCAL_VAULT" = "yes" ]; then
+            cp "${SECURE_VAULT}/secrets-latest.yaml" ./secrets.yaml
+            echo -e "${GREEN}✓ Copied secrets.yaml from vault${NC}"
+            
+            if [ -f "${SECURE_VAULT}/talosconfig-latest" ]; then
+                mkdir -p talos
+                cp "${SECURE_VAULT}/talosconfig-latest" talos/talosconfig
+                export TALOSCONFIG="$(pwd)/talos/talosconfig"
+                echo -e "${GREEN}✓ Copied talosconfig from vault${NC}"
+            fi
+        else
+            echo -e "${YELLOW}Please retrieve secrets manually${NC}"
+            echo ""
+            echo "Required files:"
+            echo "  1. secrets.yaml → $(pwd)/secrets.yaml"
+            echo "  2. talosconfig → $(pwd)/talos/talosconfig"
+            echo ""
+            echo "Press Enter when secrets are in place..."
+            read -r
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Local vault not found: ${SECURE_VAULT}${NC}"
+        echo ""
+        echo -e "${YELLOW}Please retrieve secrets manually and place them:${NC}"
+        echo "  1. secrets.yaml → $(pwd)/secrets.yaml"
+        echo "  2. talosconfig → $(pwd)/talos/talosconfig"
+        echo ""
+        echo "Then press Enter to continue..."
+        read -r
+    fi
+    
+    # Verify secrets are now present
+    if [ ! -f "./secrets.yaml" ]; then
+        echo -e "${RED}✗ secrets.yaml still not found${NC}"
+        echo -e "${RED}Cannot proceed without secrets${NC}"
+        echo ""
+        echo "Options:"
+        echo "  1. Retrieve secrets from vault and place in $(pwd)/secrets.yaml"
+        echo "  2. Generate new secrets (loses cluster identity)"
+        echo ""
+        rm -rf "${TEMP_DIR}"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}✓ Secrets verified${NC}"
 fi
 
-if [ -f "${BACKUP_DIR}/talos/talosconfig" ]; then
-    # Ensure talos directory exists
-    mkdir -p talos
-    # Copy talosconfig to talos/ directory
-    cp "${BACKUP_DIR}/talos/talosconfig" talos/
-    export TALOSCONFIG="$(pwd)/talos/talosconfig"
-    echo -e "${GREEN}✓ Restored talosconfig to talos/ directory${NC}"
-fi
-
+# Restore node configs (these should always be in backup)
 if [ -d "${BACKUP_DIR}/talos/controlplane" ]; then
     mkdir -p talos
     cp -r "${BACKUP_DIR}/talos/controlplane" talos/
@@ -228,10 +315,23 @@ echo -e "${GREEN}Restore Complete!${NC}"
 echo "========================================="
 echo ""
 echo "Restored components:"
-echo "  ✓ Talos secrets and configs"
+if [ "$SECRETS_IN_BACKUP" = true ]; then
+    echo "  ✓ Talos secrets (from backup)"
+else
+    echo "  ✓ Talos secrets (from secure vault)"
+fi
+echo "  ✓ Talos configs"
 [ -f "kubeconfig" ] && echo "  ✓ kubeconfig"
 [ "$RESTORE_ETCD" = "yes" ] && echo "  ✓ etcd snapshot"
 [ "$RESTORE_K8S" = "yes" ] && echo "  ✓ Kubernetes resources"
+echo ""
+echo "Secret source:"
+if [ "$SECRETS_IN_BACKUP" = true ]; then
+    echo "  • Secrets were included in backup archive"
+else
+    echo "  • Secrets retrieved from secure vault"
+    echo "  • Backup did NOT contain secrets (secure configuration)"
+fi
 echo ""
 echo "Next steps:"
 echo "  1. Verify cluster health:"
@@ -246,10 +346,23 @@ echo ""
 echo "  3. Verify applications:"
 echo "     kubectl get all -A"
 echo ""
-echo "  4. Review logs if issues occur:"
+if [ "$SECRETS_IN_BACKUP" = false ]; then
+    echo "  4. Verify Flux secrets (if using Flux):"
+    echo "     kubectl get secrets -n flux-system"
+    echo "     # If missing, restore from vault:"
+    echo "     kubectl apply -f ~/secure-vault/cluster-secrets/flux-secrets-latest.yaml"
+    echo ""
+fi
+echo "  5. Review logs if issues occur:"
 echo "     talosctl --nodes 192.168.99.101 logs kubelet"
 echo "     kubectl logs -n kube-system <pod-name>"
 echo ""
+if [ "$SECRETS_IN_BACKUP" = false ]; then
+    echo -e "${GREEN}✓ Secure Configuration Detected${NC}"
+    echo "  Your backup followed security best practices by"
+    echo "  excluding secrets. They were safely stored separately."
+    echo ""
+fi
 echo "========================================="
 
 exit 0
