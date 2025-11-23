@@ -5,5 +5,5 @@ resources:
   - namespace.yaml
   - helm-repository.yaml
   - helm-release.yaml
-  - ip-pool.yaml
-  - l2-advertisement.yaml
+  # - ip-pool.yaml
+  # - l2-advertisement.yaml
