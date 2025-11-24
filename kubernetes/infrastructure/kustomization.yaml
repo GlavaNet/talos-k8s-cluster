@@ -4,4 +4,4 @@ resources:
   - metallb/
   - traefik/
   - tailscale/
-  - netdata/
+  # - netdata/
