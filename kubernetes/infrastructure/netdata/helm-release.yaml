@@ -6,6 +6,7 @@ metadata:
   namespace: netdata
 spec:
   interval: 30m
+  timeout: 15m0s
   chart:
     spec:
       chart: netdata
@@ -18,9 +19,11 @@ spec:
   
   # Automatically upgrade on new versions
   install:
+    timeout: 15m0s
     remediation:
       retries: 3
   upgrade:
+    timeout: 15m0s
     remediation:
       retries: 3
   
