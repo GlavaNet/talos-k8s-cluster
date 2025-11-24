@@ -1,0 +1,255 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: netdata
+  namespace: netdata
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: netdata
+      version: "3.x"  # Use latest 3.x version
+      sourceRef:
+        kind: HelmRepository
+        name: netdata
+        namespace: netdata
+      interval: 12h
+  
+  # Automatically upgrade on new versions
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  
+  # Values optimized for 2GB Raspberry Pi nodes
+  values:
+    # Parent Configuration - Centralized metrics storage and dashboard
+    parent:
+      # Resource limits for parent pod
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 200m
+          memory: 256Mi
+      
+      # Parent database configuration
+      database:
+        # Use persistent storage on parent for longer retention
+        persistence: true
+        # Allocate 2GB for metrics storage (7 days retention)
+        volumesize: 2Gi
+        # Use default storage class (local-path in Talos)
+        storageclass: ""
+      
+      # Service configuration - use MetalLB LoadBalancer
+      service:
+        type: LoadBalancer
+        annotations:
+          # Assign specific IP from MetalLB pool
+          metallb.universe.tf/loadBalancerIPs: "192.168.99.122"
+        port: 19999
+      
+      # Parent-specific configurations
+      configs:
+        netdata:
+          enabled: true
+          path: /etc/netdata/netdata.conf
+          data: |
+            [global]
+              hostname = netdata-parent
+              memory mode = dbengine
+              page cache size = 64
+              # Store metrics for 7 days on parent
+              dbengine multihost disk space = 2048
+            
+            [db]
+              # Parent uses dbengine for persistent storage
+              mode = dbengine
+              # Reduce retention tiers to save memory (2 tiers instead of 3)
+              storage tiers = 2
+              
+            [health]
+              # Enable health checks and alerts on parent only
+              enabled = yes
+            
+            [ml]
+              # Disable ML on parent to save resources
+              # Can be enabled later if needed
+              enabled = no
+            
+            [web]
+              # Enable web UI on parent
+              mode = multi-threaded
+              web files owner = root
+              web files group = root
+              # Allow connections from anywhere
+              bind to = *
+        
+        # Stream configuration for receiving data from children
+        stream:
+          enabled: true
+          path: /etc/netdata/stream.conf
+          data: |
+            [066c430e-9496-4121-af15-30b5d5bb915d]
+              # Accept connections from children with this API key
+              enabled = yes
+              # Store received metrics in parent database
+              default memory mode = dbengine
+              # Allow all metrics from children
+              allow from = *
+      
+      # Claiming configuration for Netdata Cloud (optional)
+      claiming:
+        enabled: false
+        # To enable Netdata Cloud, set to true and add:
+        # token: "YOUR_CLAIM_TOKEN"
+        # rooms: "YOUR_ROOM_ID"
+      
+      # Pod scheduling preferences
+      affinity:
+        # Prefer to schedule parent on worker node if available
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/worker
+                    operator: Exists
+
+    # Child Configuration - Lightweight agents on each node
+    child:
+      # Deploy as DaemonSet to run on every node
+      enabled: true
+      
+      # Resource limits for child pods (conservative for 2GB nodes)
+      resources:
+        limits:
+          cpu: 200m
+          memory: 150Mi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+      
+      # Child-specific configurations
+      configs:
+        netdata:
+          enabled: true
+          path: /etc/netdata/netdata.conf
+          data: |
+            [global]
+              memory mode = ram
+              page cache size = 8
+              hostname = $HOSTNAME
+            
+            [db]
+              # Use RAM-only mode on children - no disk I/O
+              mode = ram
+              # Keep only 1 hour of metrics in RAM
+              retention = 3600
+              # Single tier only
+              storage tiers = 1
+            
+            [health]
+              # Disable health checks on children (parent handles this)
+              enabled = no
+            
+            [ml]
+              # Disable ML on children to minimize resource usage
+              enabled = no
+            
+            [plugins]
+              # Optimize plugin collection
+              # Disable plugins that aren't needed
+              tc = no
+              idlejitter = no
+            
+            [web]
+              # Disable web UI on children (access via parent)
+              mode = none
+        
+        # Stream configuration for sending data to parent
+        stream:
+          enabled: true
+          path: /etc/netdata/stream.conf
+          data: |
+            [stream]
+              # Stream metrics to parent
+              enabled = yes
+              destination = netdata-parent:19999
+              api key = 066c430e-9496-4121-af15-30b5d5bb915d
+              timeout seconds = 60
+              default port = 19999
+              # Send all metrics
+              send charts matching = *
+              buffer size bytes = 1048576
+              reconnect delay seconds = 5
+              initial clock resync iterations = 60
+      
+      # Claiming configuration for child nodes (optional)
+      claiming:
+        enabled: false
+        # If using Netdata Cloud, enable and set token/rooms
+      
+      # Don't use host network (better for Kubernetes)
+      hostNetwork: false
+      
+      # Persistence for child node identity
+      # This prevents new replication nodes on pod restarts
+      persistence:
+        enabled: true
+        hostPath: /var/lib/netdata-k8s-child
+      
+      # Update strategy
+      updateStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 1
+
+    # Service Discovery Configuration
+    # Automatically discovers services running in Kubernetes
+    sd:
+      child:
+        enabled: true
+        configmap:
+          name: netdata-child-sd-config
+          from:
+            value: |
+              name: kubernetes
+              tags: k8s
+
+    # RBAC Configuration (required for Kubernetes metrics)
+    rbac:
+      create: true
+      psp: false
+
+    # Service Account
+    serviceAccount:
+      create: true
+      name: netdata
+
+    # Notifications (disabled by default, can be enabled later)
+    notifications:
+      slack:
+        webhook_url: ""
+        recipient: ""
+
+    # Ingress Configuration (optional)
+    # Uncomment if you want to access Netdata via domain name through Traefik
+    ingress:
+      enabled: false
+      # To enable:
+      # enabled: true
+      # annotations:
+      #   kubernetes.io/ingress.class: traefik
+      #   traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      # hosts:
+      #   - host: netdata.glavanet.local
+      #     paths:
+      #       - path: /
+      #         pathType: Prefix
+      # tls: []
