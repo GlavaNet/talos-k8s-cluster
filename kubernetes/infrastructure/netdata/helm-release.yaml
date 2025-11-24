@@ -43,8 +43,8 @@ spec:
         persistence: true
         # Allocate 2GB for metrics storage (7 days retention)
         volumesize: 2Gi
-        # Use default storage class (local-path in Talos)
-        storageclass: ""
+        # Use local-path storage class (Talos default)
+        storageclass: "local-path"
       
       # Service configuration - use MetalLB LoadBalancer
       service:
@@ -95,7 +95,7 @@ spec:
           enabled: true
           path: /etc/netdata/stream.conf
           data: |
-            [066c430e-9496-4121-af15-30b5d5bb915d]
+            [0ea024ab-1bce-4ab8-adfe-c88c3f1cfcf5]
               # Accept connections from children with this API key
               enabled = yes
               # Store received metrics in parent database
@@ -181,7 +181,7 @@ spec:
               # Stream metrics to parent
               enabled = yes
               destination = netdata-parent:19999
-              api key = 066c430e-9496-4121-af15-30b5d5bb915d
+              api key = 0ea024ab-1bce-4ab8-adfe-c88c3f1cfcf5
               timeout seconds = 60
               default port = 19999
               # Send all metrics
