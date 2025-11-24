@@ -1,0 +1,83 @@
+# kubernetes/infrastructure/kube-vip/cloud-provider.yaml
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-vip-cloud-provider
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    rbac.authorization.kubernetes.io/autoupdate: "true"
+  name: system:kube-vip-cloud-provider-role
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "endpoints", "events", "services/status", "leases"]
+    verbs: ["*"]
+  - apiGroups: [""]
+    resources: ["nodes", "services"]
+    verbs: ["list","get","watch","update"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "update", "create"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["list","get","watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:kube-vip-cloud-provider-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kube-vip-cloud-provider-role
+subjects:
+- kind: ServiceAccount
+  name: kube-vip-cloud-provider
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubevip
+  namespace: kube-system
+data:
+  # IP range for LoadBalancer services
+  range-global: 192.168.99.120-192.168.99.140
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-vip-cloud-provider
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: kube-vip-cloud-provider
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-vip-cloud-provider
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kube-vip-cloud-provider
+    spec:
+      serviceAccountName: kube-vip-cloud-provider
+      containers:
+      - name: kube-vip-cloud-provider
+        image: ghcr.io/kube-vip/kube-vip-cloud-provider:v0.0.10
+        imagePullPolicy: IfNotPresent
+        command:
+        - /kube-vip-cloud-provider
+        args:
+        - --leader-elect-resource-name=kube-vip-cloud-controller
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi

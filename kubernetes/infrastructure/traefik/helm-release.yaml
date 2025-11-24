@@ -25,7 +25,7 @@ spec:
       enabled: true
       type: LoadBalancer
       annotations:
-        metallb.universe.tf/loadBalancerIPs: 192.168.99.120  # First IP from MetalLB pool
+        kube-vip.io/loadBalancerIPs: 192.168.99.120  # First IP from MetalLB pool
       spec:
         externalTrafficPolicy: Local  # Better for source IP preservation
     

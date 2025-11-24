@@ -1,0 +1,10 @@
+# kubernetes/infrastructure/kube-vip/namespace.yaml
+# Kube-VIP runs in kube-system namespace
+# This file is just for documentation
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-vip-info
+  namespace: kube-system
+data:
+  note: "Kube-VIP resources are in kube-system namespace"
