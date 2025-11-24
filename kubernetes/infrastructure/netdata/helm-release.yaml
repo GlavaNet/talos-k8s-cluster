@@ -6,7 +6,7 @@ metadata:
   namespace: netdata
 spec:
   interval: 30m
-  timeout: 15m0s
+  timeout: 15m0s  # Increased for Raspberry Pi
   chart:
     spec:
       chart: netdata
@@ -19,11 +19,11 @@ spec:
   
   # Automatically upgrade on new versions
   install:
-    timeout: 15m0s
+    timeout: 15m0s  # Increased for Raspberry Pi
     remediation:
       retries: 3
   upgrade:
-    timeout: 15m0s
+    timeout: 15m0s  # Increased for Raspberry Pi
     remediation:
       retries: 3
   
@@ -31,21 +31,21 @@ spec:
   values:
     # Parent Configuration - Centralized metrics storage and dashboard
     parent:
-      # Resource limits for parent pod
+      # Resource limits for parent pod - REDUCED for 2GB Raspberry Pi nodes
       resources:
         limits:
-          cpu: 500m
-          memory: 512Mi
+          cpu: 400m
+          memory: 384Mi  # Reduced from 512Mi
         requests:
-          cpu: 200m
-          memory: 256Mi
+          cpu: 100m      # Reduced from 200m
+          memory: 128Mi  # Reduced from 256Mi to fit on 2GB nodes
       
       # Parent database configuration
       database:
         # Use persistent storage on parent for longer retention
         persistence: true
-        # Allocate 2GB for metrics storage (7 days retention)
-        volumesize: 2Gi
+        # Allocate 1GB for metrics storage (reduced for 2GB nodes, ~3-4 days retention)
+        volumesize: 1Gi
         # Use local-path storage class (Talos default)
         storageclass: "local-path"
       
@@ -66,9 +66,9 @@ spec:
             [global]
               hostname = netdata-parent
               memory mode = dbengine
-              page cache size = 64
-              # Store metrics for 7 days on parent
-              dbengine multihost disk space = 2048
+              page cache size = 32
+              # Store metrics for 3-4 days on parent (reduced for 2GB nodes)
+              dbengine multihost disk space = 1024
             
             [db]
               # Parent uses dbengine for persistent storage
@@ -98,7 +98,7 @@ spec:
           enabled: true
           path: /etc/netdata/stream.conf
           data: |
-            [0ea024ab-1bce-4ab8-adfe-c88c3f1cfcf5]
+            [b00ba3da-e5d1-47b9-9310-689b8e4d93e3]
               # Accept connections from children with this API key
               enabled = yes
               # Store received metrics in parent database
@@ -129,14 +129,14 @@ spec:
       # Deploy as DaemonSet to run on every node
       enabled: true
       
-      # Resource limits for child pods (conservative for 2GB nodes)
+      # Resource limits for child pods - REDUCED for 2GB nodes
       resources:
         limits:
-          cpu: 200m
-          memory: 150Mi
+          cpu: 150m      # Reduced from 200m
+          memory: 100Mi  # Reduced from 150Mi
         requests:
-          cpu: 100m
-          memory: 100Mi
+          cpu: 50m       # Reduced from 100m
+          memory: 64Mi   # Reduced from 100Mi to fit on 2GB nodes
       
       # Child-specific configurations
       configs:
@@ -146,7 +146,7 @@ spec:
           data: |
             [global]
               memory mode = ram
-              page cache size = 8
+              page cache size = 4
               hostname = $HOSTNAME
             
             [db]
@@ -184,7 +184,7 @@ spec:
               # Stream metrics to parent
               enabled = yes
               destination = netdata-parent:19999
-              api key = 0ea024ab-1bce-4ab8-adfe-c88c3f1cfcf5
+              api key = b00ba3da-e5d1-47b9-9310-689b8e4d93e3
               timeout seconds = 60
               default port = 19999
               # Send all metrics
