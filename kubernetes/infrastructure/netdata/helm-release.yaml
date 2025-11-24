@@ -6,58 +6,52 @@ metadata:
   namespace: netdata
 spec:
   interval: 30m
-  timeout: 15m0s  # Increased for Raspberry Pi
+  timeout: 15m0s
   chart:
     spec:
       chart: netdata
-      version: "3.x"  # Use latest 3.x version
+      version: "3.x"
       sourceRef:
         kind: HelmRepository
         name: netdata
         namespace: netdata
       interval: 12h
   
-  # Automatically upgrade on new versions
   install:
-    timeout: 15m0s  # Increased for Raspberry Pi
+    timeout: 15m0s
     remediation:
       retries: 3
   upgrade:
-    timeout: 15m0s  # Increased for Raspberry Pi
+    timeout: 15m0s
     remediation:
       retries: 3
   
-  # Values optimized for 2GB Raspberry Pi nodes
+  # ULTRA-MINIMAL configuration for 2GB nodes
   values:
-    # Parent Configuration - Centralized metrics storage and dashboard
+    # Parent Configuration - Absolute minimum resources
     parent:
-      # Resource limits for parent pod - REDUCED for 2GB Raspberry Pi nodes
+      # Minimal resource limits
       resources:
         limits:
-          cpu: 400m
-          memory: 384Mi  # Reduced from 512Mi
+          cpu: 300m
+          memory: 256Mi    # Reduced from 384Mi
         requests:
-          cpu: 100m      # Reduced from 200m
-          memory: 128Mi  # Reduced from 256Mi to fit on 2GB nodes
+          cpu: 50m         # Reduced from 100m
+          memory: 96Mi     # Reduced from 128Mi - absolute minimum
       
-      # Parent database configuration
+      # Minimal database
       database:
-        # Use persistent storage on parent for longer retention
         persistence: true
-        # Allocate 1GB for metrics storage (reduced for 2GB nodes, ~3-4 days retention)
-        volumesize: 1Gi
-        # Use local-path storage class (Talos default)
+        volumesize: 500Mi  # Reduced from 1Gi - 1-2 days retention
         storageclass: "local-path"
       
-      # Service configuration - use MetalLB LoadBalancer
       service:
         type: LoadBalancer
         annotations:
-          # Assign specific IP from MetalLB pool
           metallb.universe.tf/loadBalancerIPs: "192.168.99.122"
         port: 19999
       
-      # Parent-specific configurations
+      # Ultra-minimal parent configuration
       configs:
         netdata:
           enabled: true
@@ -66,56 +60,48 @@ spec:
             [global]
               hostname = netdata-parent
               memory mode = dbengine
-              page cache size = 32
-              # Store metrics for 3-4 days on parent (reduced for 2GB nodes)
-              dbengine multihost disk space = 1024
+              page cache size = 16            # Minimal cache
+              dbengine multihost disk space = 512
+              update every = 2                # Collect every 2 seconds instead of 1
             
             [db]
-              # Parent uses dbengine for persistent storage
               mode = dbengine
-              # Reduce retention tiers to save memory (2 tiers instead of 3)
-              storage tiers = 2
+              storage tiers = 1               # Only 1 tier instead of 2
               
             [health]
-              # Enable health checks and alerts on parent only
               enabled = yes
             
             [ml]
-              # Disable ML on parent to save resources
-              # Can be enabled later if needed
               enabled = no
             
             [web]
-              # Enable web UI on parent
               mode = multi-threaded
               web files owner = root
               web files group = root
-              # Allow connections from anywhere
               bind to = *
+            
+            [plugins]
+              # Disable resource-intensive plugins
+              apps = no                       # Disable per-app monitoring
+              cgroups = no                    # Disable cgroup monitoring on parent
+              diskspace = no                  # Disable diskspace plugin
+              tc = no
+              idlejitter = no
         
-        # Stream configuration for receiving data from children
         stream:
           enabled: true
           path: /etc/netdata/stream.conf
           data: |
-            [b00ba3da-e5d1-47b9-9310-689b8e4d93e3]
-              # Accept connections from children with this API key
+            [a6ac2c88-463b-4b64-81e2-9a79d6110781]
               enabled = yes
-              # Store received metrics in parent database
               default memory mode = dbengine
-              # Allow all metrics from children
               allow from = *
       
-      # Claiming configuration for Netdata Cloud (optional)
       claiming:
         enabled: false
-        # To enable Netdata Cloud, set to true and add:
-        # token: "YOUR_CLAIM_TOKEN"
-        # rooms: "YOUR_ROOM_ID"
       
-      # Pod scheduling preferences
+      # Schedule parent on worker node if possible (it has most free memory)
       affinity:
-        # Prefer to schedule parent on worker node if available
         nodeAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 100
@@ -124,21 +110,19 @@ spec:
                   - key: node-role.kubernetes.io/worker
                     operator: Exists
 
-    # Child Configuration - Lightweight agents on each node
+    # Child Configuration - Ultra-minimal
     child:
-      # Deploy as DaemonSet to run on every node
       enabled: true
       
-      # Resource limits for child pods - REDUCED for 2GB nodes
+      # Absolute minimum resources
       resources:
         limits:
-          cpu: 150m      # Reduced from 200m
-          memory: 100Mi  # Reduced from 150Mi
+          cpu: 100m        # Reduced from 150m
+          memory: 80Mi     # Reduced from 100Mi
         requests:
-          cpu: 50m       # Reduced from 100m
-          memory: 64Mi   # Reduced from 100Mi to fit on 2GB nodes
+          cpu: 30m         # Reduced from 50m
+          memory: 48Mi     # Reduced from 64Mi - absolute minimum
       
-      # Child-specific configurations
       configs:
         netdata:
           enabled: true
@@ -146,75 +130,67 @@ spec:
           data: |
             [global]
               memory mode = ram
-              page cache size = 4
+              page cache size = 2             # Minimal cache
               hostname = $HOSTNAME
+              update every = 2                # Collect every 2 seconds instead of 1
             
             [db]
-              # Use RAM-only mode on children - no disk I/O
               mode = ram
-              # Keep only 1 hour of metrics in RAM
-              retention = 3600
-              # Single tier only
+              retention = 1800                # 30 minutes instead of 1 hour
               storage tiers = 1
             
             [health]
-              # Disable health checks on children (parent handles this)
               enabled = no
             
             [ml]
-              # Disable ML on children to minimize resource usage
               enabled = no
             
             [plugins]
-              # Optimize plugin collection
-              # Disable plugins that aren't needed
+              # Disable heavy plugins on children
+              apps = no                       # Big memory saver
+              cgroups = yes                   # Keep this for container monitoring
+              diskspace = no
               tc = no
               idlejitter = no
+              netdata monitoring = no
             
             [web]
-              # Disable web UI on children (access via parent)
               mode = none
         
-        # Stream configuration for sending data to parent
         stream:
           enabled: true
           path: /etc/netdata/stream.conf
           data: |
             [stream]
-              # Stream metrics to parent
               enabled = yes
               destination = netdata-parent:19999
-              api key = b00ba3da-e5d1-47b9-9310-689b8e4d93e3
+              api key = a6ac2c88-463b-4b64-81e2-9a79d6110781
               timeout seconds = 60
               default port = 19999
-              # Send all metrics
               send charts matching = *
-              buffer size bytes = 1048576
+              buffer size bytes = 524288      # Reduced buffer
               reconnect delay seconds = 5
               initial clock resync iterations = 60
       
-      # Claiming configuration for child nodes (optional)
       claiming:
         enabled: false
-        # If using Netdata Cloud, enable and set token/rooms
       
-      # Don't use host network (better for Kubernetes)
       hostNetwork: false
       
-      # Persistence for child node identity
-      # This prevents new replication nodes on pod restarts
       persistence:
         enabled: true
         hostPath: /var/lib/netdata-k8s-child
       
-      # Update strategy
       updateStrategy:
         type: RollingUpdate
         rollingUpdate:
           maxUnavailable: 1
 
-    # Service Discovery Configuration
-    # Automatically discovers services running in Kubernetes
+    # Disable K8s State monitoring to save resources
+    k8sState:
+      enabled: false  # DISABLED - saves ~100MB
+
+    # Service Discovery - minimal
     sd:
       child:
         enabled: true
@@ -225,34 +201,18 @@ spec:
               name: kubernetes
               tags: k8s
 
-    # RBAC Configuration (required for Kubernetes metrics)
     rbac:
       create: true
       psp: false
 
-    # Service Account
     serviceAccount:
       create: true
       name: netdata
 
-    # Notifications (disabled by default, can be enabled later)
     notifications:
       slack:
         webhook_url: ""
         recipient: ""
 
-    # Ingress Configuration (optional)
-    # Uncomment if you want to access Netdata via domain name through Traefik
     ingress:
       enabled: false
-      # To enable:
-      # enabled: true
-      # annotations:
-      #   kubernetes.io/ingress.class: traefik
-      #   traefik.ingress.kubernetes.io/router.entrypoints: websecure
-      # hosts:
-      #   - host: netdata.glavanet.local
-      #     paths:
-      #       - path: /
-      #         pathType: Prefix
-      # tls: []
